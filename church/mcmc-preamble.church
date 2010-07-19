@@ -1,0 +1,83 @@
+;;this file contains all of the mcmc code that doesn't mess with states -- ie all of the stuff at the level of kernels and above.
+
+;;what must be provided elsewhere:
+;;counterfactual-update
+;;structure handling: mcmc-state->xrp-draws, mcmc-state->score, mcmc-state->query-value.
+
+;;NOTE: since these are church procedures, the xrp-list will accumulate draws due to accept/reject decisions and proposals. will this cause bad slowdown?
+
+;;;kernels (mcmc transition distributions) and proposal distributions
+
+(define (basic-proposal-distribution state normal-form-proc)
+  (if (null? (mcmc-state->xrp-draws state))
+      (list 0.0 state) ;;if no xrps have been drawn (eg all randomness in q-e) make trivial proposal. (still have to update..??)
+      (let* ((chosen-xrp (rest (uniform-draw (mcmc-state->xrp-draws state)))) ;;rest is because xrp-draws is an addbox, so address is first.
+             (ret1 ((xrp-draw-proposer chosen-xrp) state))
+             (proposed-val (first ret1))
+             (proposal-fw-score (second ret1))
+             (proposal-bw-score (third ret1))
+             (ret2 (counterfactual-update state normal-form-proc (pair chosen-xrp proposed-val)))
+             (proposal-state (first ret2))
+             (cd-bw/fw (second ret2))
+             (ind-fw (- (log (length (mcmc-state->xrp-draws state)))))
+             (ind-bw (- (log (length (mcmc-state->xrp-draws proposal-state))))) )
+        (list (+ (- proposal-bw-score proposal-fw-score) cd-bw/fw (- ind-bw ind-fw)) proposal-state))))
+
+;;FIXME!! this works badly... need constraint prop to do this right.
+(define (rejection-initializer normal-form-proc)
+  (let ((proposal-state (first (counterfactual-update (make-initial-mcmc-state) normal-form-proc)))) ;;don't care about bw/fw for init.
+    (if (= -inf.0 (mcmc-state->score proposal-state))
+        (rejection-initializer normal-form-proc)
+        proposal-state)))
+
+;;basic MH kernel
+;;the proposal distribution takes a current state and returns a list of bw-fw score and proposed state.
+;;the scorer takes a state and returns the score.
+(define (make-mh-kernel proposal-distribution scorer)
+  (lambda (state)
+    (let* ((ret (proposal-distribution state))
+           (bw/fw (first ret))
+           (proposal-state (second ret))
+           (old-p (scorer state))
+           (new-p (scorer proposal-state))
+           (accept (log-flip (min 0.0 (+ (- new-p old-p) bw/fw))))
+           ;(dummy (if accept (display "--accept--\n") (display "--reject--\n")))
+           (dummy (reset-store-xrp-draws))) ;;FIXME!! this is to avoid accumulating xrp-draws...
+      (if accept
+          proposal-state
+          state))))
+
+;; ;; mixture kernel
+;; (define (mixture-kernel cdf . kernels )
+;;   (lambda (state)
+;;     (let ((u (uniform)))
+;;       (let loop ((kernels kernels)
+;;                  (cdf cdf) )
+;;         (if (<= u (car cdf))
+;;             ((car kernels) state)
+;;             (loop (cdr kernels)
+;;                   (cdr cdf) ))))))
+
+;; cycle kernel
+(define (cycle-kernel . kernels)
+  (lambda (state)
+    (fold (lambda (k s) (k s)) state kernels)))
+
+;; repeat a kernel
+(define (repeat-kernel steps kernel)
+  (apply cycle-kernel (make-list steps kernel)))
+
+;;;queries
+(define (repeated-mcmc-query-core initializer kernel num-samples)
+  (mcmc-loop kernel (initializer) num-samples '()))
+
+(define (mcmc-loop kernel state samples-left samples)
+  (if (< samples-left 1)
+      (reverse samples)
+      (mcmc-loop kernel (kernel state) (- samples-left 1) (pair (mcmc-state->query-value state) samples))))
+
+(define (mh-query samples lag normal-form-proc)
+  (repeated-mcmc-query-core (lambda () (rejection-initializer normal-form-proc))
+                            (repeat-kernel lag (make-mh-kernel (lambda (state) (basic-proposal-distribution state normal-form-proc))
+                                                               mcmc-state->score))
+                            samples))

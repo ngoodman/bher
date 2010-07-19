@@ -1,0 +1,30 @@
+#!/usr/bin/env ikarus --r6rs-script
+
+;;/home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs)
+	(_srfi :1)
+	(church readable-scheme)
+        (church compiler))
+
+(define (read-source pathname)
+ (call-with-input-file pathname
+  (lambda (port)
+   (let loop ((forms '()))
+    (let ((form (read port)))
+     (if (eof-object? form)
+	 (reverse forms)
+	 (loop (cons form forms))))))))
+
+(define (write-object objects pathname)
+ (call-with-output-file pathname (lambda (port) (for-each (lambda (o) (write o port)) objects))))
+
+;(set-qobi!)
+
+(let ((filename (second (command-line))))
+  (write-object
+   (compile (read-source (if (and  (< 7 (string-length filename))
+                                   (string-ci=? (substring filename (- (string-length filename) 7) (string-length filename)) ".church"))
+                             filename
+                             (string-append filename ".church"))))
+   (string-append filename "-church.sc")))
