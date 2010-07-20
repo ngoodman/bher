@@ -19,6 +19,11 @@
 (define (write-object objects pathname)
  (call-with-output-file pathname (lambda (port) (for-each (lambda (o) (write o port)) objects))))
 
+(define external-defs (let ((e-index (list-index (lambda (x) (equal? "-e" x)) (command-line))))
+                        (if e-index
+                            (read-source (list-ref (command-line) (+ 1 e-index)))
+                            '())))
+
 ;(set-qobi!)
 
 (let ((filename (second (command-line))))
@@ -26,5 +31,6 @@
    (compile (read-source (if (and  (< 7 (string-length filename))
                                    (string-ci=? (substring filename (- (string-length filename) 7) (string-length filename)) ".church"))
                              filename
-                             (string-append filename ".church"))))
+                             (string-append filename ".church")))
+            external-defs)
    (string-append filename "-church.sc")))

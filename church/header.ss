@@ -36,7 +36,7 @@
    `(define ,symb ,(wrap-primitive (un-prefix-church symb) *storethreading?*)))
 
  ;;any free "church-" variable in the program that isn't provided explicitly is assumed to be a scheme primitive, and a church- definition is generated for it.
- (define (generate-header *storethreading?* free-variables . external-defs)
+ (define (generate-header *storethreading?* free-variables external-defs)
    (let* ((special-defs (generate-special *storethreading?*))
           (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
                             (append special-defs external-defs))) ;;get defined symbols

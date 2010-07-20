@@ -22,7 +22,7 @@
 
  (define *storethreading?* false)
  
- (define (compile top-list)
+ (define (compile top-list external-defs)
    (let* ((church-sexpr  `(begin
                             (load "standard-preamble.church")
                             (load "xrp-preamble.church")
@@ -31,7 +31,7 @@
           (scexpr (if *storethreading?*
                       (storethreading (addressing (de-sugar-all church-sexpr)))
                       (addressing (de-sugar-all church-sexpr)))))
-     `( ,@(generate-header *storethreading?* (free-variables scexpr '()))
+     `( ,@(generate-header *storethreading?* (free-variables scexpr '()) external-defs)
         (define (church-main address store) ,scexpr))))
  
  (define symbol-index 0)

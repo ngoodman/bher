@@ -1,7 +1,7 @@
 #!/bin/tcsh -f
 rm -f $1-{church,ikarus}.sc
 echo "compiling church->scheme..."
-./church-compiler $1
+./church-compiler $*
 cat scheme-compilers/header-ikarus.sc $1-church.sc scheme-compilers/trailer-ikarus.sc >$1-ikarus.sc
 echo "running generated scheme (with ikarus)..."
 ikarus --r6rs-script $1-ikarus.sc
