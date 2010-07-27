@@ -90,15 +90,16 @@
 
  ;;this happens after addressing, so store is already passed 'down' the calls. must do a-normal form conversion and return store.
  ;;assumes that every application has address and store as first two operand exprs, and that every lambda takes these.
+ ;;FIXME!! the generated letrec doesn't work right (inits are evaluated with symbols bound to void).
  (define (storethreading sexpr)
     (cond
      ((begin? sexpr) (storethreading (last sexpr))) ;;FIXME!!! don't drop non-final exprs...
-     ((letrec? sexpr) ;;FIXME: i'm not sure if this is actually legal r4rs.
-      (let ((ret-symbols (repeat (length (second sexpr)) gensym)))
+     ((letrec? sexpr) 
+      (let ((ret-symbols (repeat (+ 1 (length (second sexpr))) gensym)))
         `(letrec ((,(first ret-symbols) (list 'foo store))
                    ,@(apply append (map (lambda (rs prev-rs binding) `((,rs (let ((store (second ,prev-rs))) ,(storethreading (second binding))))
-                                                                     (,(first binding) (second ,rs))))
-                                      (rest ret-symbols) (drop-right ret-symbols 1) (second sexpr))))
+                                                                       (,(first binding) (first ,rs))))
+                                        (rest ret-symbols) (drop-right ret-symbols 1) (second sexpr))))
                   (let ((store (second ,(last ret-symbols)))) ,(storethreading (third sexpr))))))
     ((quoted? sexpr) `(list ,sexpr store))
     ((lambda? sexpr) `(list ,sexpr store))

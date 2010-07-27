@@ -48,7 +48,6 @@
    `(
 ;;;
      ;;misc church primitives
-     ;;FIXME: these functions aren't all returning store properly.
      (define (church-apply address store proc args) (apply proc address store args))
      (define (church-eval address store sexpr env) (error "eval not implemented"))
      (define (church-get-current-environment address store) (error "gce not implemented"))
@@ -57,7 +56,7 @@
      (define church-pair ,(wrap-primitive 'cons *storethreading?*))
      (define church-first ,(wrap-primitive 'car *storethreading?*))
      (define church-rest ,(wrap-primitive 'cdr *storethreading?*))
-     (define (church-or address store . args) (fold (lambda (x y) (or x y)) #f args)) ;;FIXME: better way to do this?
+     (define (church-or address store . args) (fold (lambda (x y) (or x y)) #f args)) ;;FIXME: better way to do this? ;;FIXME!! doesn't return store..
      (define (church-and address store . args) (fold (lambda (x y) (and x y)) #t args))
 
      (define lev-dist 'foo)
