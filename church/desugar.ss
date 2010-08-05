@@ -214,7 +214,7 @@
  ;;do the fragment grammar thing to an arbitrary expression.
  ;;FIXME make alpha flexible..
  (define (fragmentize? expr) (tagged-list? expr 'fragmentize))
- (define (desugar-fragmentize expr) (make-fragment (de-sugar-all (third expr))))
+ (define (desugar-fragmentize expr) (make-fragment (de-sugar-all (second expr))))
  (define (make-fragment sexpr)
    (cond
     ((or (begin? sexpr) (mem? sexpr)) (map make-fragment sexpr))
