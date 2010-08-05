@@ -23,39 +23,54 @@
          (church readable-scheme)
          )
 
+ (define *storethreading* false)
+ (define *lazy* false)
+
  (define (prefix-church symb) (string->symbol (string-append "church-" (symbol->string symb))))
  (define (church-symbol? symb) (and (< 7 (length (string->list (symbol->string symb))))
                                     (equal? "church-" (list->string (take (string->list (symbol->string symb)) 7)))))
  (define (un-prefix-church symb) (if (church-symbol? symb)
                                      (string->symbol (list->string (drop (string->list (symbol->string symb)) 7)))
                                      symb))
- (define (wrap-primitive symb *storethreading?*) (if *storethreading?*
-                                                     `(lambda (address store . args) (list (apply ,symb args) store))
-                                                     `(lambda (address store . args) (apply ,symb args))))
- (define (primitive-def symb *storethreading?*)
-   `(define ,symb ,(wrap-primitive (un-prefix-church symb) *storethreading?*)))
+ 
+ (define (wrap-primitive symb . nargs) ;;TODO handle known nargs.
+   (let* ((arguments `(address store . args))
+          (application (if *lazy*
+                           `(apply ,symb (map (force-at address store) args))
+                           `(apply ,symb args))))
+     (if *storethreading*
+         `(lambda ,arguments (list ,application store))
+         `(lambda ,arguments ,application))))
+ 
+ (define (primitive-def symb)
+   `(define ,symb ,(wrap-primitive (un-prefix-church symb))))
 
  ;;any free "church-" variable in the program that isn't provided explicitly is assumed to be a scheme primitive, and a church- definition is generated for it.
- (define (generate-header *storethreading?* free-variables external-defs)
-   (let* ((special-defs (generate-special *storethreading?*))
+ (define (generate-header storethreading lazy free-variables external-defs)
+   (set! *storethreading* storethreading)
+   (set! *lazy* lazy)
+   (let* ((special-defs (generate-special))
           (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
                             (append special-defs external-defs))) ;;get defined symbols
           (leftover-symbols (filter (lambda (v) (not (memq v def-symbols))) (filter church-symbol? (delete-duplicates free-variables))))
-          (primitive-defs (map (lambda (s) (primitive-def s *storethreading?*)) leftover-symbols)))
+          (primitive-defs (map (lambda (s) (primitive-def s)) leftover-symbols)))
      (append external-defs primitive-defs special-defs)))
 
- (define (generate-special *storethreading?*)
+ (define (generate-special)
    `(
 ;;;
      ;;misc church primitives
-     (define (church-apply address store proc args) (apply proc address store args))
+     (define (church-apply address store proc args)
+       ,(if *lazy*
+            `(apply (church-force address store proc) address store (church-force address store args))
+            `(apply proc address store args)))
      (define (church-eval address store sexpr env) (error "eval not implemented"))
      (define (church-get-current-environment address store) (error "gce not implemented"))
      (define church-true #t)
      (define church-false #f)
-     (define church-pair ,(wrap-primitive 'cons *storethreading?*))
-     (define church-first ,(wrap-primitive 'car *storethreading?*))
-     (define church-rest ,(wrap-primitive 'cdr *storethreading?*))
+     (define church-pair ,(wrap-primitive 'cons))
+     (define church-first ,(wrap-primitive 'car))
+     (define church-rest ,(wrap-primitive 'cdr))
      (define (church-or address store . args) (fold (lambda (x y) (or x y)) #f args)) ;;FIXME: better way to do this? ;;FIXME!! doesn't return store..
      (define (church-and address store . args) (fold (lambda (x y) (and x y)) #t args))
 
@@ -63,6 +78,15 @@
 
      ;;from srfis:
      ;;take drop iota
+
+;;;
+     ;;for laziness and constraint prop:
+     (define (force-at address store)
+       (define (force val)
+         ;(display "forcing ")(display val)(newline)
+         (if (and (pair? val) (eq? (car val) 'delayed)) (force ((cadr val) address store)) val))
+       force)
+     (define (church-force address store val) ((force-at address store) val))
 
 ;;;
      ;;stuff for xrps (and dealing with stores):
@@ -76,7 +100,7 @@
      (define (church-reset-store-xrp-draws address store)
        (return-with-store store (make-store '() (store->xrp-stats store) (store->score store) (store->tick store)) 'foo))
 
-     (define (return-with-store store new-store value) ,(if *storethreading?*
+     (define (return-with-store store new-store value) ,(if *storethreading*
                                                             '(list value new-store)
                                                             '(begin (set-car! store (car new-store))
                                                                     (set-cdr! store (cdr new-store))
@@ -107,6 +131,17 @@
      ;;note: this assumes that the fns (sample, incr-stats, decr-stats, etc) are church procedures.
      ;;FIXME: what should happen with the store when the sampler is a church random fn? should not accumulate stats/score since these are 'marginalized'.
      (define (church-make-xrp address store xrp-name sample incr-stats decr-stats score init-stats hyperparams proposer support)
+       ;,(if *lazy*
+       ;;FIXME!! only rebind args if lazy..
+       (let* ((xrp-name (church-force address store xrp-name))
+              (sample (church-force address store sample))
+              (incr-stats (church-force address store incr-stats))
+              (decr-stats (church-force address store decr-stats))
+              (score (church-force address store score))
+              (init-stats (church-force address store init-stats))
+              (hyperparams (church-force address store hyperparams))
+              (proposer (church-force address store proposer))
+              (support (church-force address store support)))
        (return-with-store
         store
         (let* ((ret (pull-outof-addbox (store->xrp-stats store) address))
@@ -157,7 +192,7 @@
                                                       value
                                                       xrp-name
                                                       (lambda (address store state)
-                                                        ,(if *storethreading?*
+                                                        ,(if *storethreading*
                                                              '(list (first
                                                                      (church-apply (mcmc-state->address state) (mcmc-state->store state) proposer (list args value)))
                                                                     store)
@@ -169,7 +204,7 @@
                                                 (add-into-addbox rest-statsbox xrp-address new-stats)
                                                 (+ (store->score store) incr-score)
                                                 (store->tick store))))
-                    (return-with-store store new-store value))))))))
+                    (return-with-store store new-store value))))))))  )
 
        ;;mcmc-state structures consist of a store (which captures xrp state, etc), a score (which includes constraint enforcement), and a return value from applying a nfqp.
        ;;constructor/accessor fns: mcmc-state->xrp-draws, mcmc-state->score, mcmc-state->query-value, church-make-initial-mcmc-state.
@@ -185,7 +220,7 @@
 
        ;;this assumes that nfqp returns a thunk, which is the delayed query value. we force (apply) the thunk here, using a copy of the store from the current state.
        (define (mcmc-state->query-value state)
-         ,(if *storethreading?*
+         ,(if *storethreading*
               '(first (church-apply (mcmc-state->address state) (mcmc-state->store state) (cdr (second state)) '()))
               '(let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
                  (church-apply (mcmc-state->address state) store (cdr (second state)) '()))))
@@ -194,7 +229,7 @@
        (define (church-make-initial-mcmc-state address store)
                                         ;(for-each display (list "capturing store, xrp-draws has length :" (length (store->xrp-draws store))
                                         ;                        " xrp-stats: " (length (store->xrp-stats store)) "\n"))
-         ,(if *storethreading?*
+         ,(if *storethreading*
               '(list (make-mcmc-state store 'init-val address) store)
               '(make-mcmc-state (cons (first store) (cdr store)) 'init-val address)))
 
@@ -222,7 +257,7 @@
                                           ))
                 ;;application of the nfqp happens with interv-store, which is a fresh pair, so won't mutate original state.
                 ;;after application the store must be captured and put into the mcmc-state.
-                (ret ,(if *storethreading?*
+                (ret ,(if *storethreading*
                           '(church-apply (mcmc-state->address state) interv-store nfqp '()) ;;return is already list of value + store.
                           '(list (church-apply (mcmc-state->address state) interv-store nfqp '()) interv-store) ;;capture store, which may have been mutated.
                           ))

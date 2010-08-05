@@ -1,27 +1,24 @@
 
 
 (define (check-test info expectation-fn true-expectation tolerance name)
-  (let* ((estimates (map (lambda (run) (mean (map expectation-fn run))) info))
-         (errors (map (lambda (estimate) (abs (- estimate true-expectation))) estimates))
-         (mean-abs-error (mean errors))          
-         (std-error (sqrt (/ (mean (map (lambda (x) (* x x)) errors))
-                             (length errors)) ) )
-         )
-     ;; (for-each display (list "\n mean expected value: " (mean estimates) 
-     ;;                         "\n            variance: " (variance estimates) "   " estimates 
-     ;;                         "\n true expected value: " (exact->inexact true-expectation)
-     ;;                         "\n     mean abs. error: " mean-abs-error
-     ;;                         "\n      standard error: " std-error
-     ;;                         (if (<= mean-abs-error tolerance) "" "\n      POSSIBLE FAILURE!\n")
-     ;;                         "\n\n"
-     ;;                         ))
-     (if (> mean-abs-error tolerance)
-        (display (list name true-expectation (mean estimates)))  '())))
+  (begin
+    (display "deterministic test: ")(display name)
+    (let* ((estimates (map (lambda (run) (mean (map expectation-fn run))) info))
+           (errors (map (lambda (estimate) (abs (- estimate true-expectation))) estimates))
+           (mean-abs-error (mean errors))          
+           (std-error (sqrt (/ (mean (map (lambda (x) (* x x)) errors))
+                               (length errors)) ) )
+           )
+      (if (> mean-abs-error tolerance)
+          (for-each display (list ".. failed! true expectation: "  true-expectation ", test mean: " (mean estimates) "\n"))
+          (display ".. passed.\n")))))
 
 (define (equal?-test name test-val true-val)
-  (if (not (equal? test-val true-val))
-      (display (list name true-val test-val))
-      '()))
+  (begin
+    (display "inference test: ")(display name)
+    (if (not (equal? test-val true-val))
+        (for-each display (list ".. failed! true value: "  true-val ", test value: " test-val "\n"))
+        (display ".. passed.\n"))))
 
 (define samples 150)
 (define lag 20)
@@ -98,7 +95,13 @@
             (map (lambda (x) (list x x)) (list 1 2 3))
             '((1 1) (2 2) (3 3)) )
 
-
+(check-test (repeat runs
+                    (lambda ()
+                      (repeat samples (lambda () (flip 0.7)))))
+            (lambda (x) (if x 1 0))
+            0.7
+            error-tolerance
+            "random, no query" )
 
 (check-test (repeat runs
                     (lambda ()

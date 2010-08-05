@@ -20,7 +20,8 @@
          (church header)
          )
 
- (define *storethreading?* false)
+ (define *storethreading* false)
+ (define *lazy* false) ;;at the moment this just turns on forcing, in order to support lazified code. explicitly lazify an expression to make it lazy.
  
  (define (compile top-list external-defs)
    (let* ((church-sexpr  `(begin
@@ -28,10 +29,14 @@
                             (load "xrp-preamble.church")
                             (load "mcmc-preamble.church")
                             ,@top-list))
-          (scexpr (if *storethreading?*
-                      (storethreading (addressing (de-sugar-all church-sexpr)))
-                      (addressing (de-sugar-all church-sexpr)))))
-     `( ,@(generate-header *storethreading?* (free-variables scexpr '()) external-defs)
+          (ds-sexpr (de-sugar-all church-sexpr))
+          (ds-sexpr (if *lazy*
+                        (add-forcing ds-sexpr) ;;to make everything lazy, wrap church-sexpr with (lazify ..) before desugaring.
+                        ds-sexpr))
+          (scexpr (if *storethreading*
+                      (storethreading (addressing ds-sexpr))
+                      (addressing ds-sexpr))))
+     `( ,@(generate-header *storethreading* *lazy* (free-variables scexpr '()) external-defs)
         (define (church-main address store) ,scexpr))))
  
  (define symbol-index 0)
@@ -144,6 +149,25 @@
     ((symbol? sexpr) (if (memq sexpr bound-vars) '() (list sexpr)))
     (else '()) ))
 
+ 
+ ;;this happens after lazifying, it adds force to appropriate places (must also add forcing to primitives via header).
+ (define (add-forcing sexpr)
+   (cond
+    ((begin? sexpr) `(begin ,@(map (lambda (e) `(force ,(add-forcing e))) (drop-right (rest sexpr) 1)) ,(add-forcing (last sexpr))))
+    ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (add-forcing (second binding))))
+                                    (second sexpr))
+                        ,(add-forcing (third sexpr))))
+    ((mem? sexpr) (map add-forcing sexpr))
+    ((quoted? sexpr) sexpr)
+    ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(add-forcing (lambda-body sexpr))))
+    ((if? sexpr) `(if (force ,(add-forcing (second sexpr))) ,(add-forcing (third sexpr)) ,(add-forcing (fourth sexpr))))
+    ((application? sexpr) `((force ,(add-forcing (first sexpr))) ,@(map add-forcing (rest sexpr))))
+    (else sexpr) ))
+
+
+
+
+ 
 
  ;;syntacic sugar especially query forms (which must be registered here, and have primitive bound in in standard-env):
  (register-query-sugar 'mh-query)
@@ -152,3 +176,4 @@
  ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
  
  )
+

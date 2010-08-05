@@ -14,6 +14,7 @@ this means that, if the current world has xrps that have been added, random choi
 
 todo:
  -cond de-sugar shouldn't require an else clause.
+ -make and/or into syntactic sugar as in scheme?
  -test/debug threading method.
  -add in support for eval in church... interpreter?
  -think through handling of create/delete events.
@@ -30,18 +31,22 @@ todo:
 
 todo later:
  -laziness + constraint prop.
+   -compute supports ala cfa and use for propogating through ifs etc?
    -do program transform on applications of invertible primitives to sequence operands with inverter.
      -once inside on non-inverted primitive, don't do constraint prop.
    -laziness and constraint transforms scoped to where they are useful (inside query for one). make it work to transform only part of a program?
    -proposals only within constraint set and no proposals to xrps with singleton constraint (replaces no-proposals construct).
+   -do partial contraint prop at compilation? ie. in query with 'and' condition, force each operand of 'and' to be true...
  -noisy-everything + annealing (only where constraint prop doesn't work)?
+   -noisification after constraint prop transform shouldn't interfere with constraint prop.
+   -psmc with default annealing on noise param.
  -more efficient data structure for addboxes -- trie or hashtable?
  -caching / short-circuit evaluation: wrap an expression with a cache-check that checks if all relevant variables in env are same as last time, if so returns same return value and world arguments as last time, with current score and state (no deltas).
  -assymptotics: the time per iteration should be linear in the number of changed xrp-draws, and best-case constant in the total number of xrp-draws. ths requires:
    -caching intermediate values (so unchanged xrp-draws aren't touched).
    -no separate clean-store function (which loops across xrp-draws).
    -xrp-draw find/replace that is constant time (by changing addbox data structure).
- -AD
+ -AD (tapify with same index on re-evaluation?)
  -conjugacy detection.
  -delayed rejection.
  -population smc, including crossover.
@@ -85,4 +90,6 @@ notes:
              (add-to-cache! new-val expr-id relevant-vals)
              new-val) ))
     ))
+
+
 
