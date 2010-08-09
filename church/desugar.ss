@@ -219,6 +219,7 @@
    (cond
     ((or (begin? sexpr) (mem? sexpr)) (map make-fragment sexpr))
     ((quoted? sexpr) sexpr)
+    ;((definition? sexpr) `(define ,(second sexpr)  ,(stochastic-delay-expr (third sexpr))))
     ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (stochastic-delay-expr (second binding))))
                                     (second sexpr))
                         ,(make-fragment (third sexpr))))
@@ -257,5 +258,12 @@
  (register-sugar! begin-defines? desugar-begin-defines)
  (register-sugar! define-fn? desugar-define-fn)
  (register-sugar! seq-with-load? expand-loads)
+
+  ;;syntacic sugar query forms:
+ (register-query-sugar 'mh-query)
+ (register-query-sugar 'rejection-query)
+ (register-query-sugar 'enumeration-query)
+ ;(register-query-sugar 'primitive-laplace-mh-query 'laplace-mh-query)
+ ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
 
  )

@@ -16,7 +16,9 @@
             '() ;;init-stats
             '() ;;hyperparams
             (if (null? proposal-support) '() (first proposal-support))
-            (if (null? proposal-support) '() (if (null? (rest proposal-support)) '() (second proposal-support)))))
+            (if (null? proposal-support) '() (if (null? (rest proposal-support))
+                                                 '()
+                                                 (let ((pr (second proposal-support))) (lambda (stats hyperparams args) (pr args)))))))
 
 (define flip (make-stateless-xrp 'flip
                                  (lambda w  (if (null? w)
@@ -27,7 +29,10 @@
                                        (- (log 2.0))
                                        (if val
                                            (log (first args))
-                                           (log (- 1 (first args))) )))))
+                                           (log (- 1 (first args))) )))
+                                 '() ;proposer
+                                 (lambda (args) (list true false)) ;;FIXME: check if prob is 0 or 1.
+                                 ))
 
 (define log-flip (make-stateless-xrp 'log-flip
                                      (lambda w (if (null? w)
@@ -60,7 +65,10 @@
                                                         (>= val 0)
                                                         (< val n))
                                                    (- (log n))
-                                                   -inf.0)))))
+                                                   -inf.0)))
+                                           '();;proposer
+                                           (lambda (args) (iota (first args)))
+                                           ))
 
 (define uniform (make-stateless-xrp 'uniform
                                     (lambda (a b) (+ (* (- b a) (random-real)) a))

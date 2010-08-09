@@ -164,16 +164,6 @@
     ((application? sexpr) `((force ,(add-forcing (first sexpr))) ,@(map add-forcing (rest sexpr))))
     (else sexpr) ))
 
-
-
-
- 
-
- ;;syntacic sugar especially query forms (which must be registered here, and have primitive bound in in standard-env):
- (register-query-sugar 'mh-query)
- (register-query-sugar 'rejection-query)
- ;(register-query-sugar 'primitive-laplace-mh-query 'laplace-mh-query)
- ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
  
  )
 

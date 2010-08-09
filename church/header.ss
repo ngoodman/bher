@@ -33,11 +33,16 @@
                                      (string->symbol (list->string (drop (string->list (symbol->string symb)) 7)))
                                      symb))
  
- (define (wrap-primitive symb . nargs) ;;TODO handle known nargs.
-   (let* ((arguments `(address store . args))
-          (application (if *lazy*
-                           `(apply ,symb (map (force-at address store) args))
-                           `(apply ,symb args))))
+ (define (wrap-primitive symb . nargs)
+   (let* ((actual-args (if (null? nargs) 'args (repeat (first nargs) gensym)))
+          (arguments  `(address store . ,actual-args))
+          (application (if (null? nargs)
+                           (if *lazy*
+                               `(apply ,symb (map (lambda (a) (church-force address store a)) args))
+                               `(apply ,symb args))
+                           (if *lazy*
+                               `(,symb ,@(map (lambda (a) `(church-force address store ,a)) actual-args))
+                               `(,symb ,@actual-args)))))
      (if *storethreading*
          `(lambda ,arguments (list ,application store))
          `(lambda ,arguments ,application))))
@@ -68,37 +73,31 @@
      (define (church-get-current-environment address store) (error "gce not implemented"))
      (define church-true #t)
      (define church-false #f)
-     (define church-pair ,(wrap-primitive 'cons))
-     (define church-first ,(wrap-primitive 'car))
-     (define church-rest ,(wrap-primitive 'cdr))
+     (define church-pair ,(wrap-primitive 'cons 2))
+     (define church-first ,(wrap-primitive 'car 1))
+     (define church-rest ,(wrap-primitive 'cdr 1))
      (define (church-or address store . args) (fold (lambda (x y) (or x y)) #f args)) ;;FIXME: better way to do this? ;;FIXME!! doesn't return store..
      (define (church-and address store . args) (fold (lambda (x y) (and x y)) #t args))
 
-     (define lev-dist 'foo)
+     (define (lev-dist) (error "lev-dist not implemented"))
 
-     ;;from srfis:
-     ;;take drop iota
-
-;;;
      ;;for laziness and constraint prop:
-     (define (force-at address store)
-       (define (force val)
-         ;(display "forcing ")(display val)(newline)
-         (if (and (pair? val) (eq? (car val) 'delayed)) (force ((cadr val) address store)) val))
-       force)
-     (define (church-force address store val) ((force-at address store) val))
+     (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
+                                                  (church-force ((cadr val) address store) address store)
+                                                  val))
 
 ;;;
      ;;stuff for xrps (and dealing with stores):
-     (define (make-store xrp-draws xrp-stats score tick) (list xrp-draws xrp-stats score tick))
-     (define (make-empty-store) (make-store '() '() 0.0 0))
-     (define (store->xrp-draws store) (first store))
-     (define (store->xrp-stats store) (second store))
-     (define (store->score store) (third store))
+     (define (make-store xrp-draws xrp-stats score tick enumeration-flag) (list xrp-draws xrp-stats score tick enumeration-flag))
+     (define (make-empty-store) (make-store '() '() 0.0 0 #f))
+     (define store->xrp-draws first)
+     (define store->xrp-stats second)
+     (define store->score third)
      (define store->tick fourth)
+     (define store->enumeration-flag fifth) ;;FIXME: this is a hacky way to deal with enumeration...
 
      (define (church-reset-store-xrp-draws address store)
-       (return-with-store store (make-store '() (store->xrp-stats store) (store->score store) (store->tick store)) 'foo))
+       (return-with-store store (make-store '() (store->xrp-stats store) (store->score store) (store->tick store) (store->enumeration-flag store)) 'foo))
 
      (define (return-with-store store new-store value) ,(if *storethreading*
                                                             '(list value new-store)
@@ -120,13 +119,14 @@
                (let ((ret (pull-outof-addbox (cdr addbox) address)))
                  (cons (car ret) (cons (car addbox) (cdr ret)))))))
 
-     (define (make-xrp-draw address value xrp-name proposer-thunk ticks score) (list address value xrp-name proposer-thunk ticks score))
+     (define (make-xrp-draw address value xrp-name proposer-thunk ticks score support) (list address value xrp-name proposer-thunk ticks score support))
      (define xrp-draw-address first)
      (define xrp-draw-value second)
      (define xrp-draw-name third)
      (define xrp-draw-proposer fourth)
      (define xrp-draw-ticks fifth) ;;ticks is a pair of timer tick when this xrp-draw is touched and previous touch if any.
      (define xrp-draw-score sixth)
+     (define xrp-draw-support seventh)
 
      ;;note: this assumes that the fns (sample, incr-stats, decr-stats, etc) are church procedures.
      ;;FIXME: what should happen with the store when the sampler is a church random fn? should not accumulate stats/score since these are 'marginalized'.
@@ -153,7 +153,8 @@
               (make-store (store->xrp-draws store)
                           (add-into-addbox reststatsbox address (list init-stats tick))
                           (store->score store)
-                          tick)))
+                          tick
+                          (store->enumeration-flag store))))
         (let* ((xrp-address address)
                (proposer (if (null? proposer)
                              (lambda (address store operands old-value) ;;--> proposed-value forward-log-prob backward-log-prob
@@ -176,6 +177,7 @@
                   (let* ((tmp (pull-outof-addbox (store->xrp-stats store) xrp-address))
                          (stats (caar tmp))
                          (rest-statsbox (cdr tmp))
+                         (support-vals (if (null? support) '() (support address store stats hyperparams args)))
                          ;;this commented out code is for incemental updates...
                          ;; (tmp (if (eq? #f old-xrp-draw)
                          ;;          (sample address store stats hyperparams args) ;;FIXME: returned store?
@@ -183,7 +185,9 @@
                          ;;                 (incret (incr-stats address store (xrp-draw-value old-xrp-draw) (second decret) hyperparams args)))
                          ;;            (list (first incret) (second incret) (- (third incret) (third decret))))))
                          (tmp (if (eq? #f old-xrp-draw)
-                                  (sample address store stats hyperparams args) ;;FIXME: returned store?
+                                  (if (store->enumeration-flag store) ;;hack to init new draws to first element of support...
+                                      (incr-stats address store (first support-vals) stats hyperparams args)
+                                      (sample address store stats hyperparams args)) ;;FIXME: returned store?
                                   (incr-stats address store (xrp-draw-value old-xrp-draw) stats hyperparams args)))
                          (value (first tmp))
                          (new-stats (list (second tmp) (store->tick store)))
@@ -199,11 +203,13 @@
                                                              '(let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
                                                                 (church-apply (mcmc-state->address state) store proposer (list args value)))))
                                                       (cons (store->tick store) old-tick)
-                                                      incr-score))
+                                                      incr-score
+                                                      support-vals))
                          (new-store (make-store (add-into-addbox rest-xrp-draws address new-xrp-draw)
                                                 (add-into-addbox rest-statsbox xrp-address new-stats)
                                                 (+ (store->score store) incr-score)
-                                                (store->tick store))))
+                                                (store->tick store)
+                                                (store->enumeration-flag store))))
                     (return-with-store store new-store value))))))))  )
 
        ;;mcmc-state structures consist of a store (which captures xrp state, etc), a score (which includes constraint enforcement), and a return value from applying a nfqp.
@@ -233,6 +239,13 @@
               '(list (make-mcmc-state store 'init-val address) store)
               '(make-mcmc-state (cons (first store) (cdr store)) 'init-val address)))
 
+       ;;this is like church-make-initial-mcmc-state, but flags the created state to init new xrp-draws at left-most element of support.
+       ;;clears the xrp-draws since it is meant to happen when we begin enumeration (so none of the xrp-draws in store can be relevant).
+       (define (church-make-initial-enumeration-state address store)
+         ;;FIXME: storethreading.
+         (make-mcmc-state (make-store '() (store->xrp-stats store) (store->score store) (store->tick store) #t)
+                          'init-val address))
+
        ;;this is the key function for doing mcmc -- update the execution of a procedure, with optional changes to xrp-draw values.
        ;;  takes: an mcmc state, a normal-from-proc, and an optional list of interventions (which is is a list of xrp-draw new-value pairs to assert).
        ;;  returns: a new mcmc state and the bw/fw score of any creations and deletions.
@@ -247,13 +260,15 @@
                                                                                   (xrp-draw-name (first interv))
                                                                                   (xrp-draw-proposer (first interv))
                                                                                   (xrp-draw-ticks (first interv))
-                                                                                  'foo ;;dummy score which will be replace on update.
+                                                                                  'dummy-score ;;dummy score which will be replace on update.
+                                                                                  (xrp-draw-support (first interv))
                                                                                   )))
                                                 (store->xrp-draws (mcmc-state->store state))
                                                 interventions)
                                           (store->xrp-stats (mcmc-state->store state)) ;;NOTE: incremental differs here (adjust score for new values).
                                           0.0 ;;NOTE: incremental differs here ;;(store->score (mcmc-state->store state))
                                           new-tick ;;increment the generation counter.
+                                          (store->enumeration-flag (mcmc-state->store state))
                                           ))
                 ;;application of the nfqp happens with interv-store, which is a fresh pair, so won't mutate original state.
                 ;;after application the store must be captured and put into the mcmc-state.
@@ -294,7 +309,7 @@
                            (loop (cdr draws) used-draws (+ bw/fw
                                                            (xrp-draw-score (cdar draws)) ;;NOTE: incremental differs here
                                                            )))))))
-           (list (make-store (first draws-bw/fw) (store->xrp-stats store) (store->score store) (store->tick store))
+           (list (make-store (first draws-bw/fw) (store->xrp-stats store) (store->score store) (store->tick store) (store->enumeration-flag store))
                  (second draws-bw/fw))))
 
        )

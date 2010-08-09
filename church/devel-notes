@@ -13,13 +13,16 @@ this means that, if the current world has xrps that have been added, random choi
 
 
 todo:
- -cond de-sugar shouldn't require an else clause.
- -make and/or into syntactic sugar as in scheme?
+ -add macros? switch desugaring to macros wherever possible (everywhere except load?). make a syntax-preamble.church for most of the sugar.
+   -cond de-sugar shouldn't require an else clause.
+   -make and/or into syntactic sugar as in scheme?
+   -allow internal defines (in lambda body). 
  -test/debug threading method.
  -add in support for eval in church... interpreter?
- -think through handling of create/delete events.
+ -think through handling of create/delete events and f/b computation.
  -fix gensym xrp to have prob 0 when multiple draws (at different addresses) return same symbol.
- -the scoping of queries is probably wrong -- only make proposals to xrp-draws created within counterfactual. also clean up reset-xrp-draws hack.
+ -the scoping of queries is probably wrong -- only make proposals to xrp-draws created within counterfactual.
+ -clean up reset-xrp-draws hack? it's kind of needed as long as time to make new xrp-draw depends on number of old ones...
  -clean up handling of threading/incremental code generation: small set of functions to handle the options?
  -put in incremental score/stats method (with compile flag).
    -xrp state and scoring done incrementally, only updating on changes.
@@ -29,13 +32,13 @@ todo:
    -what's the right bw/fw to handle create/delete events?
    -to get right assymptotics need a different method for removing unused xrp-draws (also for caching to work).
 
-todo later:
  -laziness + constraint prop.
-   -compute supports ala cfa and use for propogating through ifs etc?
+   -why is forcing so slow? laziness?
+   -compute supports (ala cfa) and use for propogating through ifs etc?
    -do program transform on applications of invertible primitives to sequence operands with inverter.
      -once inside on non-inverted primitive, don't do constraint prop.
-   -laziness and constraint transforms scoped to where they are useful (inside query for one). make it work to transform only part of a program?
-   -proposals only within constraint set and no proposals to xrps with singleton constraint (replaces no-proposals construct).
+   -proposals only within constraint set (for starters propose uniformly in set new-constrained-support - (old-constrained-support - current-val)).
+   -no proposals to xrps with singleton constraint (replaces no-proposals construct).
    -do partial contraint prop at compilation? ie. in query with 'and' condition, force each operand of 'and' to be true...
  -noisy-everything + annealing (only where constraint prop doesn't work)?
    -noisification after constraint prop transform shouldn't interfere with constraint prop.
