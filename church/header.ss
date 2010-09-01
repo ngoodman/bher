@@ -278,7 +278,9 @@
                           ))
                 (value (first ret))
                 (new-store (second ret))
-                (ret2 (clean-store new-store)) ;;FIXME!! need to clean out unused xrp-stats?
+                (ret2 (if (store->enumeration-flag new-store)
+                          (list new-store 0)
+                          (clean-store new-store))) ;;FIXME!! need to clean out unused xrp-stats?
                 (new-store (first ret2))
                 (cd-bw/fw (second ret2))
                 (proposal-state (make-mcmc-state new-store value (mcmc-state->address state))))

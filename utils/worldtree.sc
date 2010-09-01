@@ -7,7 +7,7 @@
 (define (church-repeat-with-trace address store N thunk dotfilename . world-tree)
   (if (= N 0)
       (makedot dotfilename (first world-tree))
-      (let* ((tmpstore (make-store '() (store->xrp-stats store) (store->score store) (store->tick store))) ;;tmpstore has empty xrp-draws
+      (let* ((tmpstore (cons '() (cdr store))) ;;tmpstore has empty xrp-draws
              (world-tree (if (null? world-tree) (make-world-tree) (first world-tree)))
              (retval (church-apply address tmpstore thunk '())))
         (church-repeat-with-trace address store (- N 1) thunk dotfilename
@@ -15,7 +15,7 @@
                                                             (cons (final retval) (store->xrp-draws tmpstore))))))))
 
 ;(define init (cons '(init) (make-xrp-draw '(addr) 'initval 'init-name '() '() '())))
-(define (final val) (cons '(final) (make-xrp-draw '(final) val 'final-name '() '() '())))
+(define (final val) (cons '(final) (make-xrp-draw '(final) val 'final-name '() '() '() #f)))
 
 
 ;;world-tree is an a-list edge transitions to counts
