@@ -2,7 +2,7 @@
 
 (define (check-test info expectation-fn true-expectation tolerance name)
   (begin
-    (display "deterministic test: ")(display name)
+    (display "inference test: ")(display name)
     (let* ((estimates (map (lambda (run) (mean (map expectation-fn run))) info))
            (errors (map (lambda (estimate) (abs (- estimate true-expectation))) estimates))
            (mean-abs-error (mean errors))          
@@ -15,7 +15,7 @@
 
 (define (equal?-test name test-val true-val)
   (begin
-    (display "inference test: ")(display name)
+    (display "deterministic test: ")(display name)
     (if (not (equal? test-val true-val))
         (for-each display (list ".. failed! true value: "  true-val ", test value: " test-val "\n"))
         (display ".. passed.\n"))))

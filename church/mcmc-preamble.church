@@ -81,3 +81,57 @@
                             (repeat-kernel lag (make-mh-kernel (lambda (state) (basic-proposal-distribution state normal-form-proc))
                                                                mcmc-state->score))
                             samples))
+
+
+
+;;;
+;;this is the code for psmc (population sequential monte carlo). this is particle filtering with an mcmc rejuvenation kernel and (eventually) a crossover move.
+;;the sugarred call looks like (psmc-query temp-args temps popsize kernel-iterations ...defs... q-exp c-exp).
+(define (psmc-query temps popsize lag temps->nfqp)
+  (let smc ((temps temps) ;;FIXME: rest temps?
+            (population (repeat popsize (lambda () (begin
+                                                     (reset-store-xrp-draws) ;;FIXME!! this is to avoid accumulating xrp-draws...
+                                                     (rejection-initializer (apply temps->nfqp (first temps)))))))
+            (weights (make-list popsize 0)))
+
+    (let* (;(dummy (display (map mcmc-state->query-value population))) (dummy (display "\n"))
+           ;;step forward temps.
+           (rets (map (lambda (state) (counterfactual-update state (apply temps->nfqp (first temps)))) population))
+           (new-population (map first rets))
+           (cd-bw/fw (map second rets))
+           (weights (map (lambda (old-weight old-state new-state cd-bw/fw) (+ old-weight
+                                                                              (- (mcmc-state->score new-state) (mcmc-state->score old-state))
+                                                                              cd-bw/fw))
+                         weights
+                         population
+                         new-population
+                         cd-bw/fw))
+           
+           ;;resample and reset weights (optional).
+           (resample-distribution (map exp (log-normalize weights)))
+           (new2-population (repeat popsize (lambda () (begin
+                                                         (reset-store-xrp-draws) ;;FIXME!! this is to avoid accumulating xrp-draws...
+                                                         (multinomial new-population resample-distribution)))))
+           (weights (make-list popsize 0))
+           
+           ;;rejuvenate using kernel.
+           (kernel (repeat-kernel lag (make-mh-kernel (lambda (state) (basic-proposal-distribution state (apply temps->nfqp (first temps))))
+                                                               mcmc-state->score)))
+           (new3-population (map kernel new2-population)))
+
+      (begin (map (lambda (x) (begin (display "  ")(display x)(display "\n"))) (map mcmc-state->query-value new3-population)) (display "\n")
+      ;;loop if there are any temps left.
+      (if (null? (rest temps))
+          (map mcmc-state->query-value new3-population)
+          (smc (rest temps) new3-population weights)))))   )
+
+ (define (log-sum-exp . log-vals)
+   (let* ([max-log-val (apply max log-vals)])
+     (if (equal? max-log-val -inf.0)
+         -inf.0
+         (+ (log (exact->inexact (sum (map (lambda (val) (exp (- val max-log-val))) log-vals))))
+            max-log-val))))
+
+ (define (log-normalize log-scores)
+   (let* ([score-sum (apply log-sum-exp log-scores)])
+     (map (lambda (score) (- score score-sum)) log-scores)))

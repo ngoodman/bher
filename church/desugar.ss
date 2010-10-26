@@ -192,6 +192,19 @@
        `(,query-name ,@control-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp)))) )))
    (register-sugar! query? desugar-query 1))
 
+ ;;psmc-query needs to be handled slightly differently, because the query code gets temps->nfqp which takes 'temperature' arguments then gives the nfqp.
+ ;;assumes call form (psmc-query <temp-args> <temps> ..other-control-args.. ..defines.. <query-exp> <cond-exp>).
+ (define (psmc-query? expr) (and (tagged-list? expr 'psmc-query)
+                                 (>= (length (rest expr)) 2))) ;;make sure not to try de-sugaring the definition of the query -- queries have at least two subexprs.
+ (define (desugar-psmc-query expr)
+   (let*-values ([ (control-part defs) (break (lambda (subexpr) (tagged-list? subexpr 'define)) (drop-right expr 2))]
+                 [ (temp-args) (second control-part)]
+                 [ (temps) (third control-part)]
+                 [ (control-args) (drop control-part 3)]
+                 [ (query-exp cond-exp) (apply values (take-right expr 2))])
+     `(psmc-query ,temps ,@control-args (lambda ,temp-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp))))) )))
+ 
+
  ;;lazify adds delay to an expression. make sure that the expression is fully-desugarred first!
  (define (lazify? expr) (tagged-list? expr 'lazify))
  (define (desugar-lazify expr) (make-lazy (de-sugar-all (second expr))))
@@ -213,26 +226,31 @@
 
  ;;do the fragment grammar thing to an arbitrary expression.
  ;;FIXME make alpha flexible..
- (define (fragmentize? expr) (tagged-list? expr 'fragmentize))
- (define (desugar-fragmentize expr) (make-fragment (de-sugar-all (second expr))))
- (define (make-fragment sexpr)
-   (cond
-    ((or (begin? sexpr) (mem? sexpr)) (map make-fragment sexpr))
-    ((quoted? sexpr) sexpr)
-    ;((definition? sexpr) `(define ,(second sexpr)  ,(stochastic-delay-expr (third sexpr))))
-    ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (stochastic-delay-expr (second binding))))
-                                    (second sexpr))
-                        ,(make-fragment (third sexpr))))
-    ((lambda? sexpr) `(DPmem 1.0 (lambda ,(lambda-parameters sexpr) ,(make-fragment (lambda-body sexpr)))))
-    ((if? sexpr) `(if ,(make-fragment (second sexpr)) ,(stochastic-delay-expr (third sexpr)) ,(stochastic-delay-expr (fourth sexpr))))
-    ((application? sexpr) `(,(make-fragment (first sexpr)) ,@(map stochastic-delay-expr (rest sexpr))))
-    (else sexpr) ))
- (define (stochastic-delay-expr sexpr)
-   `(let ((de (list 'delayed (lambda () ,(make-fragment sexpr)))))
-      (if (flip) de (force de))))
+ ;; (define (fragmentize? expr) (tagged-list? expr 'fragmentize))
+ ;; (define (desugar-fragmentize expr) (make-fragment (de-sugar-all (second expr))))
+ ;; (define (make-fragment sexpr)
+ ;;   (cond
+ ;;    ((or (begin? sexpr) (mem? sexpr)) (map make-fragment sexpr))
+ ;;    ((quoted? sexpr) sexpr)
+ ;;    ;((definition? sexpr) `(define ,(second sexpr)  ,(stochastic-delay-expr (third sexpr))))
+ ;;    ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (stochastic-delay-expr (second binding))))
+ ;;                                    (second sexpr))
+ ;;                        ,(make-fragment (third sexpr))))
+ ;;    ((lambda? sexpr) `(DPmem 1.0 (lambda ,(lambda-parameters sexpr) ,(make-fragment (lambda-body sexpr)))))
+ ;;    ((if? sexpr) `(if ,(make-fragment (second sexpr)) ,(stochastic-delay-expr (third sexpr)) ,(stochastic-delay-expr (fourth sexpr))))
+ ;;    ((application? sexpr) `(,(make-fragment (first sexpr)) ,@(map stochastic-delay-expr (rest sexpr))))
+ ;;    (else sexpr) ))
+ ;; (define (stochastic-delay-expr sexpr)
+ ;;   `(let ((de (list 'delayed (lambda () ,(make-fragment sexpr)))))
+ ;;      (if (flip) de (force de))))
 
+ (define (fragment-lambda? expr) (tagged-list? expr 'f-lambda))
+ (define (desugar-fragment-lambda sexpr)
+   `(DPmem 1.0 (lambda ,(lambda-parameters sexpr) (if (flip) ,(lambda-body sexpr) (list 'delayed (lambda () ,(lambda-body sexpr)))))))
+   
+ (register-sugar! fragment-lambda? desugar-fragment-lambda)
  (register-sugar! lazify? desugar-lazify)
- (register-sugar! fragmentize? desugar-fragmentize)
+ ;(register-sugar! fragmentize? desugar-fragmentize)
 
 
                                         ; @form (let ((var val) ...) expr ...)
@@ -265,5 +283,7 @@
  (register-query-sugar 'enumeration-query)
  ;(register-query-sugar 'primitive-laplace-mh-query 'laplace-mh-query)
  ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
+
+ (register-sugar! psmc-query? desugar-psmc-query 1)
 
  )

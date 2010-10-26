@@ -82,8 +82,13 @@
      (define (lev-dist) (error "lev-dist not implemented"))
 
      ;;for laziness and constraint prop:
+     ;; (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
+     ;;                                              (church-force address store ((cadr val) address store))
+     ;;                                              val))
      (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
-                                                  (church-force ((cadr val) address store) address store)
+                                                  (let ((forced-val ((cadr val) address store)))
+                                                    ;(display "forced: ")(display forced-val)(newline)
+                                                    (church-force address store forced-val))
                                                   val))
 
 ;;;
@@ -313,6 +318,14 @@
                                                            )))))))
            (list (make-store (first draws-bw/fw) (store->xrp-stats store) (store->score store) (store->tick store) (store->enumeration-flag store))
                  (second draws-bw/fw))))
+
+
+       ;;this function takes a church proc and a proposer to use for it, returns a wrapped proc that stores the call and details: address, xrp-draws, return value
+       ;(define (church-with-proposer address store fn proposer)
+       ;  'foo
+       ;  )
+         
+         
 
        )
      )

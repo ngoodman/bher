@@ -97,6 +97,26 @@
                                    (lambda prefix (apply scheme-gensym prefix))
                                    (lambda (args val) (log 0.9)))) ;;FIXME!! gensym should be sad if two draws with different addresses are eq?
 
+;;;permutations
+(define random-permutation (make-stateless-xrp 'random-permutation
+                                               (lambda (len)
+                                                 ;; implements fisher-yates-knuth
+                                                 (let loop ((perm (iota len))
+                                                            (n (- len 1)))
+                                                   (if (= n 0)
+                                                       perm
+                                                       (let ((k (sample-integer (+ n 1))))
+                                                         (loop (put (put perm k (list-ref perm n)) n (list-ref perm k))
+                                                               (- n 1))))))
+                                               (lambda (args val)
+                                                 (let ((len (first args)))
+                                                   (if (= len (length val)) ;; only a weak sanity check
+                                                       (- (lnfact len))
+                                                       (log 0) )))))
+(define (put lst ind elt) (append (take lst ind) (list elt) (drop lst (+ 1 ind)))) ;;Oh, so slow!
+
+(define (permute lst) (map (lambda (ind) (list-ref lst ind)) (random-permutation (length lst))))
+
 (define (make-dirichlet-discrete hyp) (make-xrp 'dirichlet-discrete 
                                                 (lambda (stats hyperparams args) ;;sampler
                                                   (let* ((counts (map + stats hyperparams))

@@ -10,7 +10,7 @@
     (lambda (address store x) (scheme-derivative x))))
 
 ;;fn: list real --> real
-(define (gradient address store fn)
+(define (church-gradient address store fn)
   (let* ((scheme-fn (lambda (x) (fn address store x)))
          (scheme-gradient (gradient-list-R scheme-fn)))
-    (lambda (address store x) (scheme-derivative x))))
+    (lambda (address store x) (scheme-gradient x))))

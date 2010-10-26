@@ -1,5 +1,9 @@
 
 
+-partial evaluation (before or after compilation to scheme)? this will potentially speed things up a lot since it will avoid redoing work in mh.
+
+
+
 
 to be purely functional, thread all state through computation. 
 to thread state, put source into A-normal form (so applications are only applied to bound variables).
@@ -21,9 +25,10 @@ todo:
  -add in support for eval in church... interpreter?
  -think through handling of create/delete events and f/b computation.
  -fix gensym xrp to have prob 0 when multiple draws (at different addresses) return same symbol.
- -the scoping of queries is probably wrong -- only make proposals to xrp-draws created within counterfactual.
+ -the scoping of queries is probably wrong -- only make proposals to xrp-draws created within counterfactual?
  -clean up reset-xrp-draws hack? it's kind of needed as long as time to make new xrp-draw depends on number of old ones...
  -clean up handling of threading/incremental code generation: small set of functions to handle the options?
+
  -put in incremental score/stats method (with compile flag).
    -xrp state and scoring done incrementally, only updating on changes.
    -don't reset score on counterfactual-update.
@@ -40,9 +45,11 @@ todo:
    -proposals only within constraint set (for starters propose uniformly in set new-constrained-support - (old-constrained-support - current-val)).
    -no proposals to xrps with singleton constraint (replaces no-proposals construct).
    -do partial contraint prop at compilation? ie. in query with 'and' condition, force each operand of 'and' to be true...
+
  -noisy-everything + annealing (only where constraint prop doesn't work)?
    -noisification after constraint prop transform shouldn't interfere with constraint prop.
    -psmc with default annealing on noise param.
+
  -more efficient data structure for addboxes -- trie or hashtable?
  -caching / short-circuit evaluation: wrap an expression with a cache-check that checks if all relevant variables in env are same as last time, if so returns same return value and world arguments as last time, with current score and state (no deltas).
  -assymptotics: the time per iteration should be linear in the number of changed xrp-draws, and best-case constant in the total number of xrp-draws. ths requires:
