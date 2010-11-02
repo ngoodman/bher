@@ -149,6 +149,14 @@
                     ,(begin-wrap (rest condition))
                     ,(loop (rest conditions)) ) )))))
 
+ ;; (when ...)
+ (define (when? expr) (tagged-list? expr 'when))
+ (define (desugar-when expr)
+   `(if ,(second expr)
+        (begin
+          ,@(cddr expr))
+        '(void)))
+
  ;;define sugar: (define (foo x y) ...)
  (define (define-fn? expr) (and (tagged-list? expr 'define) (not (symbol? (second expr)))))
  (define (desugar-define-fn expr)
@@ -287,6 +295,7 @@
  (register-sugar! begin-defines? desugar-begin-defines)
  (register-sugar! define-fn? desugar-define-fn)
  (register-sugar! seq-with-load? expand-loads)
+ (register-sugar! when? desugar-when)
 
   ;;syntacic sugar query forms:
  (register-query-sugar 'mh-query)
