@@ -143,7 +143,7 @@
                 (test (first condition)))
            (if (equal? test 'else)
                (if (not (null? (rest conditions)))
-                   (error "else clause in cond expression must be last.")
+                   (error expr "else clause in cond expression must be last.")
                    (begin-wrap (rest condition)) )
                `(if ,test
                     ,(begin-wrap (rest condition))
@@ -194,15 +194,26 @@
 
  ;;psmc-query needs to be handled slightly differently, because the query code gets temps->nfqp which takes 'temperature' arguments then gives the nfqp.
  ;;assumes call form (psmc-query <temp-args> <temps> ..other-control-args.. ..defines.. <query-exp> <cond-exp>).
- (define (psmc-query? expr) (and (tagged-list? expr 'psmc-query)
-                                 (>= (length (rest expr)) 2))) ;;make sure not to try de-sugaring the definition of the query -- queries have at least two subexprs.
+ (define (tempered-query? query-name expr)
+   (and (tagged-list? expr query-name)
+        (>= (length (rest expr)) 2))) ;;make sure not to try de-sugaring the definition of the query -- queries have at least two subexprs.
+ (define (desugar-tempered-query query-name expr)
+   (let*-values ([(control-part defs) (break (lambda (subexpr) (tagged-list? subexpr 'define)) (drop-right expr 2))]
+                 [(temp-args) (second control-part)]
+                 [(temps) (third control-part)]
+                 [(control-args) (drop control-part 3)]
+                 [(query-exp cond-exp) (apply values (take-right expr 2))])
+     `(,query-name ,temps ,@control-args (lambda ,temp-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp))))) )))
+ 
+ (define (psmc-query? expr)
+   (tempered-query? 'psmc-query expr))
  (define (desugar-psmc-query expr)
-   (let*-values ([ (control-part defs) (break (lambda (subexpr) (tagged-list? subexpr 'define)) (drop-right expr 2))]
-                 [ (temp-args) (second control-part)]
-                 [ (temps) (third control-part)]
-                 [ (control-args) (drop control-part 3)]
-                 [ (query-exp cond-exp) (apply values (take-right expr 2))])
-     `(psmc-query ,temps ,@control-args (lambda ,temp-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp))))) )))
+   (desugar-tempered-query 'psmc-query expr))
+ 
+ (define (mh-query/annealed-init? expr)
+   (tempered-query? 'mh-query/annealed-init expr))
+ (define (desugar-mh-query/annealed-init expr)
+   (desugar-tempered-query 'mh-query/annealed-init expr))
  
 
  ;;lazify adds delay to an expression. make sure that the expression is fully-desugarred first!
@@ -285,5 +296,6 @@
  ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
 
  (register-sugar! psmc-query? desugar-psmc-query 1)
+ (register-sugar! mh-query/annealed-init? desugar-mh-query/annealed-init 1)
 
  )
