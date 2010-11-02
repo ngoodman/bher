@@ -49,14 +49,15 @@
 (define (enumerate thunk from-state . dist)
   (let* ((dist (pair (pair (mcmc-state->query-value from-state) (exp (mcmc-state->score from-state)))
                      (if (null? dist) '() (first dist))))
-         (interventions (next (map rest (mcmc-state->xrp-draws from-state)))))
+         (interventions (next (map rest (addbox->alist (mcmc-state->xrp-draws from-state))))))
     (if (first interventions)
         ;;top xrp-draw rolled over -- done enumerating:
         dist
         ;;enumerate next:
         (enumerate thunk (first (apply counterfactual-update (pair from-state (pair thunk (second interventions))))) dist))))
 
-  ;;returns a list of xrp-draw . new value pairs (ie. interventions).
+;; returns a list of xrp-draw . new value pairs (ie. interventions).
+;; xrp-draws is a list, not an addbox
 (define (next xrp-draws)
   (if (null? xrp-draws)
       (list true '()) ;;first is carry bit, rest is interventions

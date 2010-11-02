@@ -69,8 +69,8 @@
        ,(if *lazy*
             `(apply (church-force address store proc) address store (church-force address store args))
             `(apply proc address store args)))
-     (define (church-eval address store sexpr env) (error "eval not implemented"))
-     (define (church-get-current-environment address store) (error "gce not implemented"))
+     (define (church-eval address store sexpr env) (error 'eval "eval not implemented"))
+     (define (church-get-current-environment address store) (error 'gce "gce not implemented"))
      (define church-true #t)
      (define church-false #f)
      (define church-pair ,(wrap-primitive 'cons 2))
@@ -87,14 +87,14 @@
      ;;                                              val))
      (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
                                                   (let ((forced-val ((cadr val) address store)))
-                                                    ;(display "forced: ")(display forced-val)(newline)
+                                        ;(display "forced: ")(display forced-val)(newline)
                                                     (church-force address store forced-val))
                                                   val))
 
 ;;;
      ;;stuff for xrps (and dealing with stores):
      (define (make-store xrp-draws xrp-stats score tick enumeration-flag) (list xrp-draws xrp-stats score tick enumeration-flag))
-     (define (make-empty-store) (make-store '() '() 0.0 0 #f))
+     (define (make-empty-store) (make-store (make-addbox) (make-addbox) 0.0 0 #f))
      (define store->xrp-draws first)
      (define store->xrp-stats second)
      (define store->score third)
@@ -102,7 +102,13 @@
      (define store->enumeration-flag fifth) ;;FIXME: this is a hacky way to deal with enumeration...
 
      (define (church-reset-store-xrp-draws address store)
-       (return-with-store store (make-store '() (store->xrp-stats store) (store->score store) (store->tick store) (store->enumeration-flag store)) 'foo))
+       (return-with-store store
+                          (make-store (make-addbox)
+                                      (store->xrp-stats store)
+                                      (store->score store)
+                                      (store->tick store)
+                                      (store->enumeration-flag store))
+                          'foo))
 
      (define (return-with-store store new-store value) ,(if *storethreading*
                                                             '(list value new-store)
@@ -110,19 +116,36 @@
                                                                     (set-cdr! store (cdr new-store))
                                                                     value)))
 
-     ;;addboxes hold info indexed by the evaluation address.
-     ;;doesn't attempt to maintain order.
-     ;;FIXME: use better data structures -- e.g. trie or hashtable.
-     (define (add-into-addbox addbox address info)
-       (cons (cons address info) addbox))
-     ;;returns pair of info and remaining addbox. returns false if no info with this address.
-     (define (pull-outof-addbox addbox address)
-       (if (null? addbox)
-           (cons #f '())
-           (if (equal? address (caar addbox))
-               (cons (cdar addbox) (cdr addbox))
-               (let ((ret (pull-outof-addbox (cdr addbox) address)))
-                 (cons (car ret) (cons (car addbox) (cdr ret)))))))
+     (define alist-insert
+       (lambda (addbox address info)
+         (cons (cons address info) addbox)))
+
+     ;; returns pair of info and remaining addbox. returns false if no
+     ;; info with this address.
+     (define alist-pop
+       (lambda (addbox address)
+         (if (null? addbox)
+             (cons #f '())
+             (if (equal? address (caar addbox))
+                 (cons (cdar addbox) (cdr addbox))
+                 (let ((ret (alist-pop (cdr addbox) address)))
+                   (cons (car ret) (cons (car addbox) (cdr ret))))))))
+
+     (define (make-empty-alist) '())
+     (define alist-size length)
+     (define alist-empty? null?)
+     
+     ;; addboxes hold info indexed by the evaluation address.
+     ;; doesn't attempt to maintain order.
+
+     ;; alist addbox
+     (define add-into-addbox alist-insert)
+     (define pull-outof-addbox alist-pop)
+     (define make-addbox make-empty-alist)
+     (define addbox->alist (lambda (addbox) addbox))
+     (define alist->addbox (lambda (alist) alist))
+     (define addbox-size alist-size)
+     (define addbox-empty? alist-empty?)
 
      (define (make-xrp-draw address value xrp-name proposer-thunk ticks score support) (list address value xrp-name proposer-thunk ticks score support))
      (define xrp-draw-address first)
@@ -299,7 +322,7 @@
        (define (clean-store store)
          (let* ((state-tick (store->tick store))
                 (draws-bw/fw
-                 (let loop ((draws (store->xrp-draws store))
+                 (let loop ((draws (addbox->alist (store->xrp-draws store)))
                             (used-draws '())
                             (bw/fw 0.0))
                    (if (null? draws)
@@ -316,7 +339,11 @@
                            (loop (cdr draws) used-draws (+ bw/fw
                                                            (xrp-draw-score (cdar draws)) ;;NOTE: incremental differs here
                                                            )))))))
-           (list (make-store (first draws-bw/fw) (store->xrp-stats store) (store->score store) (store->tick store) (store->enumeration-flag store))
+           (list (make-store (alist->addbox (first draws-bw/fw))
+                             (store->xrp-stats store)
+                             (store->score store)
+                             (store->tick store)
+                             (store->enumeration-flag store))
                  (second draws-bw/fw))))
 
 
