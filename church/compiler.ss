@@ -67,7 +67,7 @@
 	       (church-rename-parameters (cdr parameters))))
 	((null? parameters) '())
 	((symbol? parameters) (church-rename parameters))
-	(else (error "Thius shouldn't happen"))))
+	(else (error parameters "This shouldn't happen"))))
 
  (define (addressing sexpr)
    (cond
