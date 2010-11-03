@@ -234,7 +234,7 @@
     ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (delay-expr (second binding))))
                                     (second sexpr))
                         ,(make-lazy (third sexpr))))
-    ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(make-lazy (lambda-body sexpr))))
+    ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(make-lazy (lambda-body sexpr)))) ;;delay body?
     ((if? sexpr) `(if ,(make-lazy (second sexpr)) ,(delay-expr (third sexpr)) ,(delay-expr (fourth sexpr))))
     ((application? sexpr) `(,(make-lazy (first sexpr)) ,@(map delay-expr (rest sexpr))))
     (else sexpr) ))

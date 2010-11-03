@@ -146,6 +146,10 @@
 ;;this is the code for psmc (population sequential monte carlo). this is particle filtering with an mcmc rejuvenation kernel and (eventually) a crossover move.
 ;;the sugarred call looks like (psmc-query temp-args temps popsize kernel-iterations ...defs... q-exp c-exp).
 (define (psmc-query temps popsize lag temps->nfqp)
+  (map mcmc-state->query-value (smc-core temps popsize lag temps->nfqp)))
+
+;;this does the smc without finalizing, so that we can either get the query values or the scores (etc).
+(define (smc-core temps popsize lag temps->nfqp)
   (let smc ((temps temps) ;;FIXME: rest temps?
             (population (repeat popsize (lambda () (begin
                                                      (reset-store-xrp-draws) ;;FIXME!! this is to avoid accumulating xrp-draws...
@@ -167,9 +171,12 @@
            
            ;;resample and reset weights (optional).
            (resample-distribution (map exp (log-normalize weights)))
-           (new2-population (repeat popsize (lambda () (begin
-                                                         (reset-store-xrp-draws) ;;FIXME!! this is to avoid accumulating xrp-draws...
-                                                         (multinomial new-population resample-distribution)))))
+           (collapse? (nan? (first resample-distribution)))
+           (new2-population (if collapse?
+                                '()
+                                (repeat popsize (lambda () (begin
+                                                             (reset-store-xrp-draws) ;;FIXME!! this is to avoid accumulating xrp-draws...
+                                                             (multinomial new-population resample-distribution))))))
            (weights (make-list popsize 0))
            
            ;;rejuvenate using kernel.
@@ -177,11 +184,15 @@
                                                                mcmc-state->score)))
            (new3-population (map kernel new2-population)))
 
-      (begin (map (lambda (x) (begin (display "  ")(display x)(display "\n"))) (map mcmc-state->query-value new3-population)) (display "\n")
+      (begin (map (lambda (x y) (begin (display "  ")(display x)(display "  ")(display y)(display "\n")))
+                  (map mcmc-state->query-value new3-population)
+                  (map mcmc-state->score new3-population))
+             (display "\n")
       ;;loop if there are any temps left.
-      (if (null? (rest temps))
-          (map mcmc-state->query-value new3-population)
-          (smc (rest temps) new3-population weights)))))   )
+      (if (or collapse? (null? (rest temps)))
+          new3-population
+          (smc (rest temps) new3-population weights)))))  )
+
 
  (define (log-sum-exp . log-vals)
    (let* ([max-log-val (apply max log-vals)])
