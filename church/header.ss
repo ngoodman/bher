@@ -82,14 +82,10 @@
      (define (lev-dist) (error "lev-dist not implemented"))
 
      ;;for laziness and constraint prop:
-     ;; (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
-     ;;                                              (church-force address store ((cadr val) address store))
-     ;;                                              val))
      (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
-                                                  (let ((forced-val ((cadr val) address store)))
-                                        ;(display "forced: ")(display forced-val)(newline)
-                                                    (church-force address store forced-val))
+                                                  (church-force address store ((cadr val) address store))
                                                   val))
+     
 
 ;;;
      ;;stuff for xrps (and dealing with stores):
