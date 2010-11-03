@@ -1,6 +1,6 @@
 (import (church))
 
 (church
- (load "church/test.church"))
+ (load "test.church"))
 
 (exit)
