@@ -48,7 +48,7 @@
           (begin
             (when verbose-init
                   (display "annealing-initializer: failed, restarting at top ...\n"))
-            (annealing-initializer rej-steps temps:high->low temps->nfqp))
+            (annealing-initializer rej-steps temps:low->high temps->nfqp))
           (if (null? temps)
               (begin
                 (when verbose-init
