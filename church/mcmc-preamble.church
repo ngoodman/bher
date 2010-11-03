@@ -63,7 +63,7 @@
                                       "\n  current val: " (mcmc-state->query-value mcmc-state) "\n")))
                 (let* ([nfqp (apply temps->nfqp (first temps))]
                        [rescored-state (first (counterfactual-update mcmc-state nfqp))]
-                       [rej-state ((basic-repeat-kernel rej-steps nfqp) rescored-state nfqp rej-steps)])
+                       [rej-state ((basic-repeat-kernel rej-steps nfqp) rescored-state)])
                   (next-temp (rest temps)
                              rej-state))))))))
 
