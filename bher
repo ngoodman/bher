@@ -32,11 +32,11 @@ def parse_params(params):
 @optfunc.main
 @optfunc.arghelp('verbose', 'display all executed commands')
 @optfunc.arghelp('debug', 'run all ikarus commands in debug mode')
-@optfunc.arghelp('pretty', 'keep & pretty-print compiled files')
+@optfunc.arghelp('pretty', 'keep & pretty-print compiled file')
 @optfunc.arghelp('ext', 'definitions to be included in header of compiled file')
-@optfunc.arghelp('time', 'record time it takes for church file to run')
+@optfunc.arghelp('time', 'record the time it takes for the compiled file to run')
 @optfunc.arghelp('set', 'run church file with multiple parameter settings')
-@optfunc.arghelp('keep', 'do not delete compiled files')
+@optfunc.arghelp('keep', 'do not delete compiled file')
 def main(file, verbose=False, debug=False, keep=False, pretty=False, time=False, ext="", set=""):
     """Usage: %prog <file> [options]
 
