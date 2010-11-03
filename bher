@@ -71,7 +71,7 @@ Examples:
     for (i, (param_key, param_value)) in enumerate(params):
 
         if param_key:
-            vprint("parameter %s: %s" % (param_key, param_value), True)            
+            vprint("* %s: %s" % (param_key, param_value), True)            
             settings["out_path"] = abspath(file) + "." + str(i) + ".ss"
         else:
             settings["out_path"] = abspath(file) + ".ss"

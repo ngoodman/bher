@@ -147,7 +147,17 @@
      (define addbox-size alist-size)
      (define addbox-empty? alist-empty?)
 
-     (define (make-xrp-draw address value xrp-name proposer-thunk ticks score support) (list address value xrp-name proposer-thunk ticks score support))
+     ;; trie addbox
+     ;; (define make-addbox make-empty-trie)
+     ;; (define add-into-addbox trie-insert)
+     ;; (define pull-outof-addbox trie-pop)
+     ;; (define addbox->alist trie->alist)
+     ;; (define alist->addbox alist->trie)
+     ;; (define addbox-size trie-size)
+     ;; (define addbox-empty? trie-empty?)
+
+     (define (make-xrp-draw address value xrp-name proposer-thunk ticks score support)
+       (list address value xrp-name proposer-thunk ticks score support))
      (define xrp-draw-address first)
      (define xrp-draw-value second)
      (define xrp-draw-name third)
