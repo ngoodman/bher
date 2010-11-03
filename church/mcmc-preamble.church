@@ -48,7 +48,7 @@
           (begin
             (when verbose-init
                   (display "annealing-initializer: failed, restarting at top ...\n"))
-            (annealing-initializer rej-steps temps temps->nfqp))
+            (annealing-initializer rej-steps temps:high->low temps->nfqp))
           (if (null? temps)
               (begin
                 (when verbose-init
@@ -109,7 +109,7 @@
   (repeat-kernel steps (make-mh-kernel (lambda (state) (basic-proposal-distribution state nfqp))
                                        mcmc-state->score)))
 
-(define inference-timing #f)
+(define inference-timing #t)
 
 ;;;queries
 (define (repeated-mcmc-query-core initializer kernel num-samples)
