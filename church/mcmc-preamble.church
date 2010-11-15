@@ -109,7 +109,7 @@
   (repeat-kernel steps (make-mh-kernel (lambda (state) (basic-proposal-distribution state nfqp))
                                        mcmc-state->score)))
 
-(define inference-timing #t)
+(define inference-timing #f)
 
 ;;;queries
 (define (repeated-mcmc-query-core initializer kernel num-samples)
