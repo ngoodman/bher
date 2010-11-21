@@ -47,7 +47,8 @@
 
 (define dirichlet (make-stateless-xrp 'dirichlet sample-dirichlet
                                       (lambda (args val)
-                                        (dirichlet-lnpdf (first args) val))))
+                                        (dirichlet-lnpdf (first args) val))
+                                      ))
 
 (define sample-discrete (make-stateless-xrp 'sample-discrete
                                             discrete-sampler
@@ -55,7 +56,10 @@
                                               (if (>= val (length (first args)))
                                                   -inf.0
                                                   (let ((p (discrete-pdf (first args) val)))
-                                                    (if (> p 0) (log p) -inf.0))))))
+                                                    (if (> p 0) (log p) -inf.0))))
+                                            '() ;;proposer
+                                            (lambda (args) (iota (length (first args))))
+                                            ))
 
 (define sample-integer (make-stateless-xrp 'sample-integer
                                            random-integer

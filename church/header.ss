@@ -69,7 +69,27 @@
        ,(if *lazy*
             `(apply (church-force address store proc) address store (church-force address store args))
             `(apply proc address store args)))
-     (define (church-eval address store sexpr env) (error 'eval "eval not implemented"))
+     ;(define (church-eval address store sexpr env) (error 'eval "eval not implemented"))
+
+     ;;requires compile, eval, and environment to be available from underlying scheme....
+     (define (church-eval addr store sexpr)
+       ;(display (compile sexpr '()) ))
+       ((eval `(letrec ,(map (lambda (def)
+                              (if (symbol? (cadr def))
+                                  (list (cadr def) (caddr def))
+                                  `(,(car (cadr def)) (lambda ,(cdr (cadr def)) ,@(cddr def)))))
+                            (compile (list sexpr) '()))
+                church-main)
+             (environment '(rnrs)
+                          '(rnrs mutable-pairs)
+                          '(_srfi :1)
+                          '(rename (church external math-env) (sample-discrete discrete-sampler))
+                          '(rename (only (ikarus) gensym pretty-print exact->inexact) (gensym scheme-gensym))
+                          '(_srfi :19)
+                          '(church compiler)
+                          '(rnrs eval)  ))
+             addr store))
+     
      (define (church-get-current-environment address store) (error 'gce "gce not implemented"))
      (define church-true #t)
      (define church-false #f)

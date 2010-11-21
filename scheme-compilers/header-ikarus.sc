@@ -13,6 +13,10 @@
                pretty-print
                exact->inexact) ;;this isn't really needed.
          (gensym scheme-gensym))
+
  (church trie)
+
+ (church compiler)
+ (rnrs eval)
  )
 
