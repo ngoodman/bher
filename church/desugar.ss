@@ -60,15 +60,24 @@
    (let loop ((expr expr)
               (pass 0))
      (let ((new-expr (try expr (filter (lambda (s) (or (null? (times-to-try s)) (< pass (first (times-to-try s))))) sugar-registry))))
+            ;(display expr)(display "   :   ")(display new-expr)(newline)
        (if (eq? new-expr unchanged)
            expr
            (loop new-expr (+ pass 1)) ))))
 
  (define (de-sugar-all sexpr)
    (let ((new-sexpr (de-sugar sexpr)))
+     ;(display sexpr)(display "   :   ")(display new-sexpr)(newline)
      (if (list? new-sexpr)
          (map de-sugar-all new-sexpr)
          new-sexpr)))
+
+ ;; ;;recursive desugaring. first desugar subexprs 
+ ;; (define (de-sugar-all sexpr)
+ ;;   (if (list? sexpr)
+ ;;       (de-sugar (map de-sugar-all sexpr))
+ ;;       sexpr))
+   
 
  ;; (begin ...)
 
@@ -113,7 +122,9 @@
          (let* ((binding (first bindings))
                 (var (first binding))
                 (value-exprs (second binding)) )
-           `((lambda (,var) (let* ,(rest bindings) ,body)) ,value-exprs) ))))
+           (if (null? (rest bindings))
+               `((lambda (,var) ,body) ,value-exprs)
+               `((lambda (,var) (let* ,(rest bindings) ,body)) ,value-exprs) )))))
 
  ;; (case ...)
  (define (case? expr) (tagged-list? expr 'case))
@@ -191,9 +202,11 @@
  ;; ... query-expr condition-expr)
  ;;note: primitive-name shouldn't be the same as query-name, because otherwise desugarring doesn't know when to stop.
  (define (register-query-sugar query-name)
-   (define (query? expr) (and (tagged-list? expr query-name)
-                              (>= (length (rest expr)) 2))) ;;make sure not to try de-sugaring the definition of the query -- queries have at least two subexprs.
+   (define (query? expr)
+     (and (tagged-list? expr query-name)
+          (>= (length (rest expr)) 2))) ;;make sure not to try de-sugaring the definition of the query -- queries have at least two subexprs.
    (define (desugar-query expr)
+     ;(display expr) (newline)
      (let*-values ([ (control-part defs) (break (lambda (subexpr) (tagged-list? subexpr 'define)) (drop-right expr 2))]
                    [ (control-args) (rest control-part)]
                    [ (query-exp cond-exp) (apply values (take-right expr 2))])
@@ -226,7 +239,13 @@
 
  ;;lazify adds delay to an expression. make sure that the expression is fully-desugarred first!
  (define (lazify? expr) (tagged-list? expr 'lazify))
- (define (desugar-lazify expr) (make-lazy (de-sugar-all (second expr))))
+ (define (desugar-lazify expr)
+   ;(display (de-sugar-all (second expr)))
+   ;(newline)
+   ;(display (make-lazy (de-sugar-all (second expr))))
+   ;(newline)
+   ;(make-lazy (de-sugar-all (second expr))))
+   (make-lazy (second expr)))
  (define (make-lazy sexpr)
    (cond
     ((or (begin? sexpr) (mem? sexpr)) (map make-lazy sexpr))
@@ -234,6 +253,7 @@
     ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (delay-expr (second binding))))
                                     (second sexpr))
                         ,(make-lazy (third sexpr))))
+    ((definition? sexpr) `(define ,(second sexpr) ,(delay-expr (third sexpr))))
     ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(make-lazy (lambda-body sexpr)))) ;;delay body?
     ((if? sexpr) `(if ,(make-lazy (second sexpr)) ,(delay-expr (third sexpr)) ,(delay-expr (fourth sexpr))))
     ((application? sexpr) `(,(make-lazy (first sexpr)) ,@(map delay-expr (rest sexpr))))
@@ -267,10 +287,6 @@
  (define (desugar-fragment-lambda sexpr)
    `(DPmem 1.0 (lambda ,(lambda-parameters sexpr) (if (flip) ,(lambda-body sexpr) (list 'delayed (lambda () ,(lambda-body sexpr)))))))
    
- (register-sugar! fragment-lambda? desugar-fragment-lambda)
- (register-sugar! lazify? desugar-lazify)
- ;(register-sugar! fragmentize? desugar-fragmentize)
-
 
                                         ; @form (let ((var val) ...) expr ...)
                                         ; @desc
@@ -307,4 +323,12 @@
  (register-sugar! psmc-query? desugar-psmc-query 1)
  (register-sugar! mh-query/annealed-init? desugar-mh-query/annealed-init 1)
 
+
+
+ (register-sugar! fragment-lambda? desugar-fragment-lambda)
+ (register-sugar! lazify? desugar-lazify)
+ ;(register-sugar! fragmentize? desugar-fragmentize)
+
+
+ 
  )

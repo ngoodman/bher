@@ -18,5 +18,8 @@
 
  (church compiler)
  (rnrs eval)
+
+ (except (_srfi :69) string-ci-hash string-hash) ;;used for CGIS, can comment out otherwise...
+
  )
 
