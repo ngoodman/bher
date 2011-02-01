@@ -11,7 +11,7 @@
 (library
  (church compiler)
 
- (export compile)
+ (export compile constrain addressing)
 
  (import (rnrs)
          (_srfi :1) ; lists
@@ -21,7 +21,6 @@
          )
 
  (define *storethreading* false)
- (define *lazy* false) ;;at the moment this just turns on forcing, in order to support lazified code. explicitly lazify an expression to make it lazy.
  
  (define (compile top-list external-defs)
    (let* ((church-sexpr  `(begin
@@ -30,13 +29,13 @@
                             (load "mcmc-preamble.church")
                             ,@top-list))
           (ds-sexpr (de-sugar-all church-sexpr))
-          (ds-sexpr (if *lazy*
-                        (add-forcing ds-sexpr) ;;to make everything lazy, wrap church-sexpr with (lazify ..) before desugaring.
-                        ds-sexpr))
+          ;(ds-sexpr (add-forcing ds-sexpr) ;;to make everything lazy, wrap church-sexpr with (lazify ..) before desugaring.
           (scexpr (if *storethreading*
                       (storethreading (addressing ds-sexpr))
-                      (addressing ds-sexpr))))
-     `( ,@(generate-header *storethreading* *lazy* (free-variables scexpr '()) external-defs)
+                      (addressing ds-sexpr)))
+          (scexpr (constrain scexpr))
+          )
+     `( ,@(generate-header *storethreading* (free-variables scexpr '()) external-defs)
         (define (church-main address store) ,scexpr))))
  
  (define symbol-index 0)
@@ -164,7 +163,36 @@
     ((application? sexpr) `((force ,(add-forcing (first sexpr))) ,@(map add-forcing (rest sexpr))))
     (else sexpr) ))
 
+ 
 
+ (define (constrain? sexpr) (tagged-list? sexpr 'church-constrain))
+
+ ;; happens after addressing, instead of add-forcing; requires lazified program
+ (define (constrain sexpr)
+   (define (%constrain sexpr)
+     (cond [(mem? sexpr) (error sexpr "constraint-prop needs to happen after addressing, mem should have been desugared")]
+           [(constrain? sexpr) `((lambda (cs) ,(%constrain (fourth sexpr))) ,(%unconstrain (fifth sexpr)))]
+           [(begin? sexpr) `(begin ,@(map (lambda (e) `(church-force church-*wildcard* address store ,(%unconstrain e)))
+                                          (drop-right (rest sexpr) 1))
+                                   ,(%constrain (last sexpr)))]
+           [(letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (%unconstrain (second binding))))
+                                           (second sexpr))
+                               ,(%constrain (third sexpr)))]
+           [(quoted? sexpr) sexpr]
+           [(lambda? sexpr) `(lambda (cs . ,(lambda-parameters sexpr)) ,(%constrain (lambda-body sexpr)))]
+           [(if? sexpr) `(if (church-force church-*wildcard* address store ,(%unconstrain (second sexpr)))
+                             ,(%constrain (third sexpr))
+                             ,(%constrain (fourth sexpr)))]
+           [(application? sexpr)
+            (let* ((address-expr (second sexpr))
+                   (address-expr (if (equal? address-expr '(cons args mem-address))
+                                     '(cons (map (lambda (a) (church-force church-*wildcard* address store a)) args) mem-address) ;;force the args to mem in address 
+                                     address-expr)))
+            (if (and (pair? (first sexpr)) (equal? (caar sexpr) 'lambda))
+                `(,(%unconstrain (first sexpr)) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3))) ;;do we the need special case?
+                `((church-force church-*wildcard* address store ,(%unconstrain (first sexpr))) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3)))))]
+           [else sexpr]))
+   (define (%unconstrain sexpr) `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))
+   `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))
 
  )
-

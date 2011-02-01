@@ -210,7 +210,11 @@
      (let*-values ([ (control-part defs) (break (lambda (subexpr) (tagged-list? subexpr 'define)) (drop-right expr 2))]
                    [ (control-args) (rest control-part)]
                    [ (query-exp cond-exp) (apply values (take-right expr 2))])
-       `(,query-name ,@control-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp)))) )))
+       `(,query-name ,@control-args (lambda () (constrain
+                                                (lazify
+                                                 (begin ,@defs (pair ,cond-exp (lambda () ,query-exp) )) )
+                                                (list (pair true *wildcard*)))
+                     ))))
    (register-sugar! query? desugar-query 1))
 
  ;;psmc-query needs to be handled slightly differently, because the query code gets temps->nfqp which takes 'temperature' arguments then gives the nfqp.
@@ -259,7 +263,8 @@
     ((application? sexpr) `(,(make-lazy (first sexpr)) ,@(map delay-expr (rest sexpr))))
     (else sexpr) ))
  (define (delay-expr sexpr)
-   (if (or (lambda? sexpr) (and (mem? sexpr) (lambda? (first sexpr))))
+   (if (or (lambda? sexpr)
+           (and (mem? sexpr) (lambda? (first sexpr))))
        (make-lazy sexpr)
        `(list 'delayed (mem (lambda () ,(make-lazy sexpr))))))
 

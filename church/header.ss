@@ -13,6 +13,7 @@
 
 ;;NOTE: assumes a bunch of random sampling/scoring primitives, which should be provided from GSL (eg. in our external/math-env.ss).
 
+
 (library
  (church header)
 
@@ -24,7 +25,6 @@
          )
 
  (define *storethreading* false)
- (define *lazy* false)
 
  (define (prefix-church symb) (string->symbol (string-append "church-" (symbol->string symb))))
  (define (church-symbol? symb) (and (< 7 (length (string->list (symbol->string symb))))
@@ -32,28 +32,34 @@
  (define (un-prefix-church symb) (if (church-symbol? symb)
                                      (string->symbol (list->string (drop (string->list (symbol->string symb)) 7)))
                                      symb))
- 
- (define (wrap-primitive symb . nargs)
-   (let* ((actual-args (if (null? nargs) 'args (repeat (first nargs) gensym)))
-          (arguments  `(address store . ,actual-args))
-          (application (if (null? nargs)
-                           (if *lazy*
-                               `(apply ,symb (map (lambda (a) (church-force address store a)) args))
-                               `(apply ,symb args))
-                           (if *lazy*
-                               `(,symb ,@(map (lambda (a) `(church-force address store ,a)) actual-args))
-                               `(,symb ,@actual-args)))))
-     (if *storethreading*
-         `(lambda ,arguments (list ,application store))
-         `(lambda ,arguments ,application))))
+
+ ;;an inverse symbol should be bound to a scheme proc in header that takes cs and args list and returns values of args...
+(define (get-inverse-symbol s)
+  (cond [(eq? s 'procand) 'procand-inverse]
+        ((eq? s 'cons) 'cons-inverse)
+        ((eq? s 'procor) 'procor-inverse)
+        [else #f]))
+
+(define (wrap-primitive symb . nargs)
+  (let* ((actual-args (if (null? nargs) 'args (repeat (first nargs) gensym)))
+         (arguments  `(cs address store . ,actual-args))
+         (application (let* ([inverse-symbol (get-inverse-symbol symb)])
+                        (if inverse-symbol
+                            `(apply ,symb (,inverse-symbol cs address store ,(if (null? nargs) 'args `(list ,@actual-args))))
+                            (if (null? nargs)
+                                `(apply ,symb (map (lambda (a) (church-force church-*wildcard* address store a )) args))
+                                `(,symb ,@(map (lambda (a) `(church-force church-*wildcard* address store ,a)) actual-args)))))
+                      ))
+    (if *storethreading*
+        `(lambda ,arguments (list ,application store))
+        `(lambda ,arguments ,application))))
  
  (define (primitive-def symb)
    `(define ,symb ,(wrap-primitive (un-prefix-church symb))))
 
  ;;any free "church-" variable in the program that isn't provided explicitly is assumed to be a scheme primitive, and a church- definition is generated for it.
- (define (generate-header storethreading lazy free-variables external-defs)
+ (define (generate-header storethreading free-variables external-defs)
    (set! *storethreading* storethreading)
-   (set! *lazy* lazy)
    (let* ((special-defs (generate-special))
           (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
                             (append special-defs external-defs))) ;;get defined symbols
@@ -65,15 +71,11 @@
    `(
 ;;;
      ;;misc church primitives
-     (define (church-apply address store proc args)
-       ,(if *lazy*
-            `(apply (church-force address store proc) address store (church-force address store args))
-            `(apply proc address store args)))
-     ;(define (church-eval address store sexpr env) (error 'eval "eval not implemented"))
+     (define (church-apply cs address store proc args)
+       (apply (church-force church-*wildcard* address store proc) cs address store (church-force church-*wildcard* address store args)))
 
      ;;requires compile, eval, and environment to be available from underlying scheme....
-     (define (church-eval addr store sexpr)
-       ;(display (compile sexpr '()) ))
+     (define (church-eval cs addr store sexpr) ;;FIXME: constraints?
        ((eval `(letrec ,(map (lambda (def)
                               (if (symbol? (cadr def))
                                   (list (cadr def) (caddr def))
@@ -90,22 +92,62 @@
                           '(rnrs eval)  ))
              addr store))
      
-     (define (church-get-current-environment address store) (error 'gce "gce not implemented"))
+     (define (church-get-current-environment cs address store) (error 'gce "gce not implemented"))
      (define church-true #t)
      (define church-false #f)
+     (define church-*wildcard* 'wildcard);(gensym 'wilcard))
      (define church-pair ,(wrap-primitive 'cons 2))
      (define church-first ,(wrap-primitive 'car 1))
      (define church-rest ,(wrap-primitive 'cdr 1))
-     (define (church-or address store . args) (fold (lambda (x y) (or x y)) #f args)) ;;FIXME: better way to do this? ;;FIXME!! doesn't return store..
-     (define (church-and address store . args) (fold (lambda (x y) (and x y)) #t args))
+     (define (procor . args) (if (null? args) #f (if (car args) #t (apply procor (cdr args)))))
+     (define church-or ,(wrap-primitive 'procor))
+     (define (procand . args) (if (null? args) #t (if (eq? #f (car args)) #f (apply procand (cdr args)))))
+     (define church-and ,(wrap-primitive 'procand))
+     
+     ;;inverses
+     (define (procand-inverse cs address store args)
+        (cond
+         ((equal? cs '(#t)) ;;handle singleton true cs.
+          (map (lambda (a) (church-force '(#t) address store a)) args))
+         (else
+          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
 
+     (define (procor-inverse cs address store args)
+        (cond
+         ((equal? cs '(#t)) ;;handle singleton true cs.
+          (let loop ((argsleft args))
+            (if (null? (cdr argsleft))
+                (cons (church-force '(#t) address store (car argsleft)) '())
+                (let ((nextargval (church-force church-*wildcard* address store (car argsleft))))
+                  (if nextargval (cons nextargval '()) (cons nextargval (loop (cdr argsleft))))))))
+         ((equal? cs '(#f)) ;;handle singleton false cs.
+          (map (lambda (a) (church-force '(#f) address store a)) args))
+         (else
+          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
+
+     (define (cons-inverse cs address store args)
+       (if (and (pair? cs) (null? (cdr cs)) (pair? (car cs))) ;;handle singleton constraints that is a pair
+           (list (church-force (list (caar cs)) address store (car args))
+                 (church-force (list (cdar cs)) address store (cadr args)))
+           (map (lambda (a) (church-force church-*wildcard* address store a)) args)))
+
+     (define (wildcard? v) (if (pair? v)
+                               (if (eq? (car v) church-*wildcard*) #t (wildcard? (cdr v)))
+                               (eq? v church-*wildcard*)))
+
+     (define (intersect a b) 
+       (cond ((wildcard? a) b)
+             ((wildcard? b) a)
+             (else (lset-intersection eq? a b))))
+           
+     
      (define (lev-dist) (error "lev-dist not implemented"))
 
-     ;;for laziness and constraint prop:
-     (define (church-force address store val) (if (and (pair? val) (eq? (car val) 'delayed))
-                                                  (church-force address store ((cadr val) address store))
-                                                  val))
-     
+     ;;for laziness and constraints:
+     (define (church-force cs address store val) (if (and (pair? val) (eq? (car val) 'delayed))
+                                                     (church-force cs address store ((cadr val) cs address store))
+                                                     val))
+    
 
 ;;;
      ;;stuff for xrps (and dealing with stores):
@@ -117,7 +159,7 @@
      (define store->tick fourth)
      (define store->enumeration-flag fifth) ;;FIXME: this is a hacky way to deal with enumeration...
 
-     (define (church-reset-store-xrp-draws address store)
+     (define (church-reset-store-xrp-draws cs address store)
        (return-with-store store
                           (make-store (make-addbox)
                                       (store->xrp-stats store)
@@ -181,21 +223,21 @@
      (define xrp-draw-ticks fifth) ;;ticks is a pair of timer tick when this xrp-draw is touched and previous touch if any.
      (define xrp-draw-score sixth)
      (define xrp-draw-support seventh)
+     (define (xrp-draw-fwd x) (list-ref x 8))
+     (define (xrp-draw-rev x) (list-ref x 9))
 
      ;;note: this assumes that the fns (sample, incr-stats, decr-stats, etc) are church procedures.
      ;;FIXME: what should happen with the store when the sampler is a church random fn? should not accumulate stats/score since these are 'marginalized'.
-     (define (church-make-xrp address store xrp-name sample incr-stats decr-stats score init-stats hyperparams proposer support)
-       ;,(if *lazy*
-       ;;FIXME!! only rebind args if lazy..
-       (let* ((xrp-name (church-force address store xrp-name))
-              (sample (church-force address store sample))
-              (incr-stats (church-force address store incr-stats))
-              (decr-stats (church-force address store decr-stats))
-              (score (church-force address store score))
-              (init-stats (church-force address store init-stats))
-              (hyperparams (church-force address store hyperparams))
-              (proposer (church-force address store proposer))
-              (support (church-force address store support)))
+     (define (church-make-xrp cs address store xrp-name sample incr-stats decr-stats score init-stats hyperparams proposer support)
+       (let* ((xrp-name (church-force church-*wildcard* address store xrp-name))
+              (sample (church-force church-*wildcard* address store sample))
+              (incr-stats (church-force church-*wildcard* address store incr-stats))
+              (decr-stats (church-force church-*wildcard* address store decr-stats))
+              (score (church-force church-*wildcard* address store score))
+              (init-stats (church-force church-*wildcard* address store init-stats))
+              (hyperparams (church-force church-*wildcard* address store hyperparams))
+              (proposer (church-force church-*wildcard* address store proposer))
+              (support (church-force church-*wildcard* address store support)))
        (return-with-store
         store
         (let* ((ret (pull-outof-addbox (store->xrp-stats store) address))
@@ -211,27 +253,31 @@
                           (store->enumeration-flag store))))
         (let* ((xrp-address address)
                (proposer (if (null? proposer)
-                             (lambda (address store operands old-value) ;;--> proposed-value forward-log-prob backward-log-prob
-                               (let* ((dec (decr-stats address store old-value (caar (pull-outof-addbox (store->xrp-stats store) xrp-address)) hyperparams operands))
+                             (lambda (cs address store operands old-value) ;;--> proposed-value forward-log-prob backward-log-prob
+                               (let* ((dec (decr-stats church-*wildcard* address store old-value (caar (pull-outof-addbox (store->xrp-stats store) xrp-address)) hyperparams operands))
                                       (decstats (second dec))
                                       (decscore (third dec))
-                                      (inc (sample address store decstats hyperparams operands))
+                                      (inc (sample church-*wildcard* address store decstats hyperparams operands))
                                       (proposal-value (first inc))
                                       (incscore (third inc)))
                                  (list proposal-value incscore decscore)))
                              proposer)))
-          (lambda (address store . args)
-            (let* ((tmp (pull-outof-addbox (store->xrp-draws store) address)) ;;FIXME!! check if xrp-address has changed?
+          (lambda (cs address store . args)
+            ;(display "constraint set is ")(display cs)(display "  at address ")(display address)(display "\n")
+            (let* ((args (map (lambda (a) (church-force church-*wildcard* address store a)) args)) ;;FIXME: args doesn't need to be forced here, except for proposer...
+                   (tmp (pull-outof-addbox (store->xrp-draws store) address)) ;;FIXME!! check if xrp-address has changed?
                    (old-xrp-draw (car tmp))
                    (rest-xrp-draws (cdr tmp))
-                   (old-tick (if (eq? #f old-xrp-draw) '() (first (xrp-draw-ticks old-xrp-draw)))))
+                   (old-tick (if (eq? #f old-xrp-draw) '() (first (xrp-draw-ticks old-xrp-draw))))
+                   )
               ;;if this xrp-draw has been touched on this tick, as in mem, don't change score or stats.
               (if (equal? (store->tick store) old-tick)
                   (return-with-store store store (xrp-draw-value old-xrp-draw))
                   (let* ((tmp (pull-outof-addbox (store->xrp-stats store) xrp-address))
                          (stats (caar tmp))
                          (rest-statsbox (cdr tmp))
-                         (support-vals (if (null? support) '() (support address store stats hyperparams args)))
+                         (support-vals (if (null? support) church-*wildcard* (support church-*wildcard* address store stats hyperparams args)))
+                         (support-vals (intersect cs support-vals))
                          ;;this commented out code is for incemental updates...
                          ;; (tmp (if (eq? #f old-xrp-draw)
                          ;;          (sample address store stats hyperparams args) ;;FIXME: returned store?
@@ -240,22 +286,31 @@
                          ;;            (list (first incret) (second incret) (- (third incret) (third decret))))))
                          (tmp (if (eq? #f old-xrp-draw)
                                   (if (store->enumeration-flag store) ;;hack to init new draws to first element of support...
-                                      (incr-stats address store (first support-vals) stats hyperparams args)
-                                      (sample address store stats hyperparams args)) ;;FIXME: returned store?
-                                  (incr-stats address store (xrp-draw-value old-xrp-draw) stats hyperparams args)))
+                                      (incr-stats church-*wildcard* address store (first support-vals) stats hyperparams args)
+                                      (if (and (not (wildcard? cs)) (pair? cs) (null? (cdr cs)))
+                                          (incr-stats church-*wildcard* address store (first cs) stats hyperparams args) ;;singleton cs is deterministic on init...
+                                          (sample church-*wildcard* address store stats hyperparams args))) ;;FIXME: returned store?
+                                  (incr-stats church-*wildcard* address store (xrp-draw-value old-xrp-draw) stats hyperparams args)))
                          (value (first tmp))
                          (new-stats (list (second tmp) (store->tick store)))
                          (incr-score (third tmp)) ;;FIXME: need to catch measure zero xrp situation?
+                         ;(xrp-draw-address address)
                          (new-xrp-draw (make-xrp-draw address
                                                       value
                                                       xrp-name
-                                                      (lambda (address store state)
+                                                      (lambda (cs address store state)
                                                         ,(if *storethreading*
                                                              '(list (first
-                                                                     (church-apply (mcmc-state->address state) (mcmc-state->store state) proposer (list args value)))
+                                                                     (church-apply church-*wildcard*
+                                                                                   (mcmc-state->address state)
+                                                                                   (mcmc-state->store state)
+                                                                                   proposer
+                                                                                   (list args value)))
                                                                     store)
                                                              '(let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
-                                                                (church-apply (mcmc-state->address state) store proposer (list args value)))))
+                                                                ;(display "proposing at address ")(display xrp-draw-address)
+                                                                ;(display "  support is ")(display support-vals)(newline)
+                                                                (church-apply church-*wildcard* (mcmc-state->address state) store proposer (list args value)))))
                                                       (cons (store->tick store) old-tick)
                                                       incr-score
                                                       support-vals))
@@ -280,13 +335,14 @@
 
        ;;this assumes that nfqp returns a thunk, which is the delayed query value. we force (apply) the thunk here, using a copy of the store from the current state.
        (define (mcmc-state->query-value state)
-         ,(if *storethreading*
-              '(first (church-apply (mcmc-state->address state) (mcmc-state->store state) (cdr (second state)) '()))
-              '(let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
-                 (church-apply (mcmc-state->address state) store (cdr (second state)) '()))))
+         ;,(if *storethreading*
+              ;'(first (church-apply church-*wildcard* (mcmc-state->address state) (mcmc-state->store state) (cdr (second state)) '()))
+              (let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
+                 (church-force church-*wildcard* (mcmc-state->address state) store
+                               (church-apply church-*wildcard* (mcmc-state->address state) store (cdr (second state)) '()))))
 
        ;;this captures the current store/address and packages up an initial mcmc-state.
-       (define (church-make-initial-mcmc-state address store)
+       (define (church-make-initial-mcmc-state cs address store)
                                         ;(for-each display (list "capturing store, xrp-draws has length :" (length (store->xrp-draws store))
                                         ;                        " xrp-stats: " (length (store->xrp-stats store)) "\n"))
          ,(if *storethreading*
@@ -295,7 +351,7 @@
 
        ;;this is like church-make-initial-mcmc-state, but flags the created state to init new xrp-draws at left-most element of support.
        ;;clears the xrp-draws since it is meant to happen when we begin enumeration (so none of the xrp-draws in store can be relevant).
-       (define (church-make-initial-enumeration-state address store)
+       (define (church-make-initial-enumeration-state cs address store)
          ;;FIXME: storethreading.
          (make-mcmc-state (make-store '() (store->xrp-stats store) (store->score store) (store->tick store) #t)
                           'init-val address))
@@ -327,8 +383,8 @@
                 ;;application of the nfqp happens with interv-store, which is a fresh pair, so won't mutate original state.
                 ;;after application the store must be captured and put into the mcmc-state.
                 (ret ,(if *storethreading*
-                          '(church-apply (mcmc-state->address state) interv-store nfqp '()) ;;return is already list of value + store.
-                          '(list (church-apply (mcmc-state->address state) interv-store nfqp '()) interv-store) ;;capture store, which may have been mutated.
+                          '(church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) ;;return is already list of value + store.
+                          '(list (church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) interv-store) ;;capture store, which may have been mutated.
                           ))
                 (value (first ret))
                 (new-store (second ret))

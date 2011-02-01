@@ -300,16 +300,16 @@
             error-tolerance
             "memoized random procedure, unconditioned." )
 
-(check-test (repeat runs
-                    (lambda ()
-                      (mh-query samples lag
-                                (define bit-flip (lambda (fidelity x) (flip (if x fidelity (- 1 fidelity)))))
-                                (rejection-query (define a (flip 0.7)) a (bit-flip 0.8 a))
-                                true )))
-            (lambda (x) (if x 1 0)) 
-            (/ (* 0.7 0.8) (+ (* 0.7 0.8) (* 0.3 0.2)))
-            error-tolerance
-            "mh-query over rejection query for conditioned flip." )
+;; (check-test (repeat runs
+;;                     (lambda ()
+;;                       (mh-query samples lag
+;;                                 (define bit-flip (lambda (fidelity x) (flip (if x fidelity (- 1 fidelity)))))
+;;                                 (rejection-query (define a (flip 0.7)) a (bit-flip 0.8 a))
+;;                                 true )))
+;;             (lambda (x) (if x 1 0)) 
+;;             (/ (* 0.7 0.8) (+ (* 0.7 0.8) (* 0.3 0.2)))
+;;             error-tolerance
+;;             "mh-query over rejection query for conditioned flip." )
 
 ;; (define noise 0.0)
 ;; (check-test (repeat runs
