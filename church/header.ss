@@ -139,6 +139,8 @@
        (cond ((wildcard? a) b)
              ((wildcard? b) a)
              (else (lset-intersection eq? a b))))
+
+     (define (singleton? cs) (and (not (wildcard? cs)) (pair? cs) (null? (cdr cs))))
            
      
      (define (lev-dist) (error "lev-dist not implemented"))
@@ -285,11 +287,13 @@
                          ;;                 (incret (incr-stats address store (xrp-draw-value old-xrp-draw) (second decret) hyperparams args)))
                          ;;            (list (first incret) (second incret) (- (third incret) (third decret))))))
                          (tmp (if (eq? #f old-xrp-draw)
+                                  ;;initialize the xrp-draw:
                                   (if (store->enumeration-flag store) ;;hack to init new draws to first element of support...
                                       (incr-stats church-*wildcard* address store (first support-vals) stats hyperparams args)
-                                      (if (and (not (wildcard? cs)) (pair? cs) (null? (cdr cs)))
+                                      (if (singleton? cs);(and (not (wildcard? cs)) (pair? cs) (null? (cdr cs)))
                                           (incr-stats church-*wildcard* address store (first cs) stats hyperparams args) ;;singleton cs is deterministic on init...
                                           (sample church-*wildcard* address store stats hyperparams args))) ;;FIXME: returned store?
+                                  ;;re-use existing xrp-draw value:
                                   (incr-stats church-*wildcard* address store (xrp-draw-value old-xrp-draw) stats hyperparams args)))
                          (value (first tmp))
                          (new-stats (list (second tmp) (store->tick store)))
@@ -413,13 +417,17 @@
                            (if (null? (cdr (xrp-draw-ticks (cdar draws))))
                                ;;this was a new xrp-draw, accumulate fw prob:
                                (loop (cdr draws) (cons (car draws) used-draws) (- bw/fw
-                                                                                  (xrp-draw-score (cdar draws)) ;;NOTE: incremental differs here
+                                                                                  (if (singleton? (xrp-draw-support (cdar draws)))
+                                                                                      0.0
+                                                                                      (xrp-draw-score (cdar draws))) ;;NOTE: incremental differs here
                                                                                   ))
                                ;;this xrp-draw existed already:
                                (loop (cdr draws) (cons (car draws) used-draws) bw/fw))
                            ;;this xrp-draw was not used in last update, drop it and accumulate bw prob:
                            (loop (cdr draws) used-draws (+ bw/fw
-                                                           (xrp-draw-score (cdar draws)) ;;NOTE: incremental differs here
+                                                           (if (singleton? (xrp-draw-support (cdar draws)))
+                                                                                      0.0
+                                                                                      (xrp-draw-score (cdar draws))) ;;NOTE: incremental differs here
                                                            )))))))
            (list (make-store (alist->addbox (first draws-bw/fw))
                              (store->xrp-stats store)
