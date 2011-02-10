@@ -212,7 +212,8 @@
                    [ (query-exp cond-exp) (apply values (take-right expr 2))])
        `(,query-name ,@control-args (lambda () (constrain
                                                 (lazify
-                                                 (begin ,@defs (pair ,cond-exp (lambda () ,query-exp) )) )
+                                                 (begin ,@defs (pair ,cond-exp ,query-exp)) )
+                                                 ;(begin ,@defs (pair ,cond-exp (lambda () ,query-exp) )) )
                                                 (list (pair true *wildcard*)))
                      ))))
    (register-sugar! query? desugar-query 1))
@@ -228,7 +229,7 @@
                  [(temps) (third control-part)]
                  [(control-args) (drop control-part 3)]
                  [(query-exp cond-exp) (apply values (take-right expr 2))])
-     `(,query-name ,temps ,@control-args (lambda ,temp-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp))))) )))
+     `(,query-name ,temps ,@control-args (lambda ,temp-args (lambda () (begin ,@defs (pair ,cond-exp (lambda () ,query-exp))))) ))) ;;FIXME: update to constraints and auto lazy
  
  (define (psmc-query? expr)
    (tempered-query? 'psmc-query expr))

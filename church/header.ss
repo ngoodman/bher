@@ -26,6 +26,18 @@
 
  (define *storethreading* false)
 
+;;;main procedure to make the header.
+;;;any free "church-" variable in the program that isn't provided explicitly is assumed to be a scheme primitive, and a church- definition is generated for it.
+ (define (generate-header storethreading free-variables external-defs)
+   (set! *storethreading* storethreading)
+   (let* ((special-defs (generate-special))
+          (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
+                            (append special-defs external-defs))) ;;get defined symbols
+          (leftover-symbols (filter (lambda (v) (not (memq v def-symbols))) (filter church-symbol? (delete-duplicates free-variables))))
+          (primitive-defs (map (lambda (s) (primitive-def s)) leftover-symbols)))
+     (append external-defs primitive-defs special-defs)))
+ 
+;;;things to wrap up primitive functions and symbols for use within transformed code:
  (define (prefix-church symb) (string->symbol (string-append "church-" (symbol->string symb))))
  (define (church-symbol? symb) (and (< 7 (length (string->list (symbol->string symb))))
                                     (equal? "church-" (list->string (take (string->list (symbol->string symb)) 7)))))
@@ -38,6 +50,7 @@
   (cond [(eq? s 'procand) 'procand-inverse]
         ((eq? s 'cons) 'cons-inverse)
         ((eq? s 'procor) 'procor-inverse)
+        ((eq? s 'equal?) 'equal?-inverse)
         [else #f]))
 
 (define (wrap-primitive symb . nargs)
@@ -57,19 +70,26 @@
  (define (primitive-def symb)
    `(define ,symb ,(wrap-primitive (un-prefix-church symb))))
 
- ;;any free "church-" variable in the program that isn't provided explicitly is assumed to be a scheme primitive, and a church- definition is generated for it.
- (define (generate-header storethreading free-variables external-defs)
-   (set! *storethreading* storethreading)
-   (let* ((special-defs (generate-special))
-          (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
-                            (append special-defs external-defs))) ;;get defined symbols
-          (leftover-symbols (filter (lambda (v) (not (memq v def-symbols))) (filter church-symbol? (delete-duplicates free-variables))))
-          (primitive-defs (map (lambda (s) (primitive-def s)) leftover-symbols)))
-     (append external-defs primitive-defs special-defs)))
 
+;;;special header functions including xrp handling code and the counterfactual update used in MH.
  (define (generate-special)
    `(
 ;;;
+     ;;take a church proc, cache return value on address (used for short-circuiting memoized proc evaluation)
+     (define not-set 'no-cached-value-set) ;fixme: make (gensym))
+     (define (cache proc)
+       (define cache-hash not-set)
+       (lambda (cs address store . args)
+         (if (null? (first address))
+             ;;has no args, don't need a hash table
+             (begin (when (eq? not-set cache-hash) (set! cache-hash (church-apply cs address store proc args)))
+                    cache-hash)
+             ;;has args, need a hash-table
+             (begin (when (eq? not-set cache-hash) (set! cache-hash (make-hash-table)))
+                    (hash-table-ref cache-hash address (lambda () (let ((val (church-apply cs address store proc args)))
+                                                                    (hash-table-set! cache-hash address val)
+                                                                    val)))))))
+     
      ;;misc church primitives
      (define (church-apply cs address store proc args)
        (apply (church-force church-*wildcard* address store proc) cs address store (church-force church-*wildcard* address store args)))
@@ -96,6 +116,7 @@
      (define church-true #t)
      (define church-false #f)
      (define church-*wildcard* 'wildcard);(gensym 'wilcard))
+     ;(define church-pair ,(wrap-primitive 'cons 2))
      (define church-pair ,(wrap-primitive 'cons 2))
      (define church-first ,(wrap-primitive 'car 1))
      (define church-rest ,(wrap-primitive 'cdr 1))
@@ -104,7 +125,7 @@
      (define (procand . args) (if (null? args) #t (if (eq? #f (car args)) #f (apply procand (cdr args)))))
      (define church-and ,(wrap-primitive 'procand))
      
-     ;;inverses
+     ;;inverses (take a list of delayed args, return a lists of arg values)
      (define (procand-inverse cs address store args)
         (cond
          ((equal? cs '(#t)) ;;handle singleton true cs.
@@ -126,9 +147,23 @@
           (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
 
      (define (cons-inverse cs address store args)
-       (if (and (pair? cs) (null? (cdr cs)) (pair? (car cs))) ;;handle singleton constraints that is a pair
-           (list (church-force (list (caar cs)) address store (car args))
-                 (church-force (list (cdar cs)) address store (cadr args)))
+       (if (and (singleton? cs) (pair? (car cs)))
+           ;;handle singleton constraints that is a pair
+           (list
+            (if (wildcard? (list (caar cs))) ;;only force if not widcard
+                (car args)
+                (church-force (list (caar cs)) address store (car args)))
+            (if (wildcard? (list (cdar cs))) ;;only force if not widcard
+                (cadr args)
+                (church-force (list (cdar cs)) address store (cadr args))))
+           ;;otherwise just return (possibly delayed) args -- don't force...
+           args))
+
+     (define (equal?-inverse cs address store args)
+       (if (equal? cs '(#t))
+           (let* ((a (church-force church-*wildcard* address store (car args)))
+                  (b (church-force (list a) address store (cadr args))))
+             (list a b))
            (map (lambda (a) (church-force church-*wildcard* address store a)) args)))
 
      (define (wildcard? v) (if (pair? v)
@@ -146,9 +181,10 @@
      (define (lev-dist) (error "lev-dist not implemented"))
 
      ;;for laziness and constraints:
-     (define (church-force cs address store val) (if (and (pair? val) (eq? (car val) 'delayed))
-                                                     (church-force cs address store ((cadr val) cs address store))
-                                                     val))
+     (define (church-force cs address store val)
+       (if (and (pair? val) (eq? (car val) 'delayed))
+           (church-force cs address store ((cadr val) cs address store))
+           val))
     
 
 ;;;
@@ -333,25 +369,27 @@
        (define mcmc-state->address third)
        (define (mcmc-state->xrp-draws state) (store->xrp-draws (mcmc-state->store state)))
        (define (mcmc-state->score state)
-         (if (not (eq? #t (first (second state))))
-             -inf.0 ;;enforce conditioner.
-             (store->score (mcmc-state->store state))))
+         (let ((cond-val (church-force church-*wildcard* (mcmc-state->address state) (mcmc-state->store state) (first (second state)))))
+           (if (not (eq? #t cond-val))
+               -inf.0 ;;enforce conditioner.
+               (store->score (mcmc-state->store state)))))
 
        ;;this assumes that nfqp returns a thunk, which is the delayed query value. we force (apply) the thunk here, using a copy of the store from the current state.
        (define (mcmc-state->query-value state)
          ;,(if *storethreading*
               ;'(first (church-apply church-*wildcard* (mcmc-state->address state) (mcmc-state->store state) (cdr (second state)) '()))
               (let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
-                 (church-force church-*wildcard* (mcmc-state->address state) store
-                               (church-apply church-*wildcard* (mcmc-state->address state) store (cdr (second state)) '()))))
+                (church-force church-*wildcard* (mcmc-state->address state) store (cdr (second state)))))
+                 ;(church-force church-*wildcard* (mcmc-state->address state) store
+                 ;              (church-apply church-*wildcard* (mcmc-state->address state) store (cdr (second state)) '()))))
 
        ;;this captures the current store/address and packages up an initial mcmc-state.
        (define (church-make-initial-mcmc-state cs address store)
                                         ;(for-each display (list "capturing store, xrp-draws has length :" (length (store->xrp-draws store))
                                         ;                        " xrp-stats: " (length (store->xrp-stats store)) "\n"))
-         ,(if *storethreading*
-              '(list (make-mcmc-state store 'init-val address) store)
-              '(make-mcmc-state (cons (first store) (cdr store)) 'init-val address)))
+         ;,(if *storethreading*
+          ;    '(list (make-mcmc-state store 'init-val address) store)
+         (make-mcmc-state (cons (first store) (cdr store)) 'init-val address))
 
        ;;this is like church-make-initial-mcmc-state, but flags the created state to init new xrp-draws at left-most element of support.
        ;;clears the xrp-draws since it is meant to happen when we begin enumeration (so none of the xrp-draws in store can be relevant).

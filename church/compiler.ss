@@ -29,6 +29,7 @@
                             (load "mcmc-preamble.church")
                             ,@top-list))
           (ds-sexpr (de-sugar-all church-sexpr))
+          ;(dummy (display (addressing (de-sugar-all `(begin ,@top-list)))))
           ;(ds-sexpr (add-forcing ds-sexpr) ;;to make everything lazy, wrap church-sexpr with (lazify ..) before desugaring.
           (scexpr (if *storethreading*
                       (storethreading (addressing ds-sexpr))
@@ -75,10 +76,13 @@
     ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (church-rename (first binding)) (addressing (second binding)))) (second sexpr))
                         ,(addressing (third sexpr))))
     ((mem? sexpr) `((lambda (mem-address store proc)
-                      (lambda (address store . args) (church-apply (cons args mem-address) store proc args)))
-                    address
+                      ;(begin (church-display address store "making memproc  ")(church-display address store mem-address)
+                      (lambda (address store . args) (church-apply (cons args mem-address) store proc args))
+                      )
+                    (cons ',(next-addr) address);address
                     store
                     ,(addressing (second sexpr))))
+                    ;(church-cache address store ,(addressing (second sexpr)))))
     ;;((self-evaluating? sexpr) (make-syntax 'self-evaluating sugared-sexpr sexpr) )
     ((quoted? sexpr) sexpr)
     ((lambda? sexpr) `(lambda ,(cons 'address (cons 'store (church-rename-parameters (lambda-parameters sexpr))))
@@ -188,9 +192,9 @@
                    (address-expr (if (equal? address-expr '(cons args mem-address))
                                      '(cons (map (lambda (a) (church-force church-*wildcard* address store a)) args) mem-address) ;;force the args to mem in address 
                                      address-expr)))
-            (if (and (pair? (first sexpr)) (equal? (caar sexpr) 'lambda))
-                `(,(%unconstrain (first sexpr)) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3))) ;;do we the need special case?
-                `((church-force church-*wildcard* address store ,(%unconstrain (first sexpr))) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3)))))]
+              (if (and (pair? (first sexpr)) (equal? (caar sexpr) 'lambda))
+                  `(,(%unconstrain (first sexpr)) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3))) ;;do we the need special case?
+                  `((church-force church-*wildcard* address store ,(%unconstrain (first sexpr))) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3)))))]
            [else sexpr]))
    (define (%unconstrain sexpr) `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))
    `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))

@@ -40,7 +40,8 @@
 (define (rejection-initializer normal-form-proc)
   (let ((proposal-state (first (counterfactual-update (make-initial-mcmc-state) normal-form-proc)))) ;;don't care about bw/fw for init.
     (if (= -inf.0 (mcmc-state->score proposal-state))
-        (rejection-initializer normal-form-proc)
+        (begin (reset-store-xrp-draws)
+               (rejection-initializer normal-form-proc))
         proposal-state)))
 
 (define verbose-init #f)
