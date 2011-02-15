@@ -32,10 +32,10 @@
    (set! *storethreading* storethreading)
    (let* ((special-defs (generate-special))
           (def-symbols (map (lambda (d) (if (pair? (second d)) (first (second d)) (second d)))
-                            (append special-defs external-defs))) ;;get defined symbols
+                            (append special-defs inverses external-defs))) ;;get defined symbols
           (leftover-symbols (filter (lambda (v) (not (memq v def-symbols))) (filter church-symbol? (delete-duplicates free-variables))))
           (primitive-defs (map (lambda (s) (primitive-def s)) leftover-symbols)))
-     (append external-defs primitive-defs special-defs)))
+     (append external-defs primitive-defs special-defs inverses)))
  
 ;;;things to wrap up primitive functions and symbols for use within transformed code:
  (define (prefix-church symb) (string->symbol (string-append "church-" (symbol->string symb))))
@@ -47,11 +47,17 @@
 
  ;;an inverse symbol should be bound to a scheme proc in header that takes cs and args list and returns values of args...
 (define (get-inverse-symbol s)
-  (cond [(eq? s 'procand) 'procand-inverse]
-        ((eq? s 'cons) 'cons-inverse)
-        ((eq? s 'procor) 'procor-inverse)
-        ((eq? s 'equal?) 'equal?-inverse)
-        [else #f]))
+  (case s
+    ((procand) 'procand-inverse)
+    ((cons) 'cons-inverse)
+    ((car) 'first-inverse)
+    ((cdr) 'rest-inverse)
+    ((list) 'list-inverse)
+    ((list-ref) 'list-ref-inverse)
+    ((procor) 'procor-inverse)
+    ;((equal?) 'equal?-inverse)
+    ((eqv?) 'equal?-inverse)
+    [else #f]))
 
 (define (wrap-primitive symb . nargs)
   (let* ((actual-args (if (null? nargs) 'args (repeat (first nargs) gensym)))
@@ -124,47 +130,7 @@
      (define church-or ,(wrap-primitive 'procor))
      (define (procand . args) (if (null? args) #t (if (eq? #f (car args)) #f (apply procand (cdr args)))))
      (define church-and ,(wrap-primitive 'procand))
-     
-     ;;inverses (take a list of delayed args, return a lists of arg values)
-     (define (procand-inverse cs address store args)
-        (cond
-         ((equal? cs '(#t)) ;;handle singleton true cs.
-          (map (lambda (a) (church-force '(#t) address store a)) args))
-         (else
-          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
 
-     (define (procor-inverse cs address store args)
-        (cond
-         ((equal? cs '(#t)) ;;handle singleton true cs.
-          (let loop ((argsleft args))
-            (if (null? (cdr argsleft))
-                (cons (church-force '(#t) address store (car argsleft)) '())
-                (let ((nextargval (church-force church-*wildcard* address store (car argsleft))))
-                  (if nextargval (cons nextargval '()) (cons nextargval (loop (cdr argsleft))))))))
-         ((equal? cs '(#f)) ;;handle singleton false cs.
-          (map (lambda (a) (church-force '(#f) address store a)) args))
-         (else
-          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
-
-     (define (cons-inverse cs address store args)
-       (if (and (singleton? cs) (pair? (car cs)))
-           ;;handle singleton constraints that is a pair
-           (list
-            (if (wildcard? (list (caar cs))) ;;only force if not widcard
-                (car args)
-                (church-force (list (caar cs)) address store (car args)))
-            (if (wildcard? (list (cdar cs))) ;;only force if not widcard
-                (cadr args)
-                (church-force (list (cdar cs)) address store (cadr args))))
-           ;;otherwise just return (possibly delayed) args -- don't force...
-           args))
-
-     (define (equal?-inverse cs address store args)
-       (if (equal? cs '(#t))
-           (let* ((a (church-force church-*wildcard* address store (car args)))
-                  (b (church-force (list a) address store (cadr args))))
-             (list a b))
-           (map (lambda (a) (church-force church-*wildcard* address store a)) args)))
 
      (define (wildcard? v) (if (pair? v)
                                (if (eq? (car v) church-*wildcard*) #t (wildcard? (cdr v)))
@@ -483,6 +449,81 @@
          
 
        )
-     )
-
    )
+
+(define inverses
+  '(
+         ;;inverses (take a list of delayed args, return a lists of arg values)
+     (define (procand-inverse cs address store args)
+        (cond
+         ((equal? cs '(#t)) ;;handle singleton true cs.
+          (map (lambda (a) (church-force '(#t) address store a)) args))
+         (else
+          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
+
+     (define (procor-inverse cs address store args)
+        (cond
+         ((equal? cs '(#t)) ;;handle singleton true cs.
+          (let loop ((argsleft args))
+            (if (null? (cdr argsleft))
+                (cons (church-force '(#t) address store (car argsleft)) '())
+                (let ((nextargval (church-force church-*wildcard* address store (car argsleft))))
+                  (if nextargval (cons nextargval '()) (cons nextargval (loop (cdr argsleft))))))))
+         ((equal? cs '(#f)) ;;handle singleton false cs.
+          (map (lambda (a) (church-force '(#f) address store a)) args))
+         (else
+          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
+
+     (define (cons-inverse cs address store args)
+       (if (and (singleton? cs) (pair? (car cs)))
+           ;;handle singleton constraints that is a pair
+           (let ((csl (caar cs));(church-force church-*wildcard* address store (caar cs)))
+                 (csr (cdar cs)));(church-force church-*wildcard* address store (cdar cs))))
+             (list
+              (if (wildcard? (list csl)) ;;only force if not widcard
+                  (car args)
+                  (church-force (list csl) address store (car args)))
+              (if (wildcard? (list csr)) ;;only force if not widcard
+                  (cadr args)
+                  (church-force (list csr) address store (cadr args)))))
+           ;;otherwise just return (possibly delayed) args -- don't force...
+           args))
+
+     (define (list-inverse cs address store args)
+       ;(display cs)
+       (if (and (singleton? cs) (list? (car cs)))
+           ;;handle singleton constraints that is a list
+           (map (lambda (x a)
+                  (if (wildcard? (list x)) a (church-force (list x) address store a)))
+                (car cs)
+                args)
+           ;;otherwise just return (possibly delayed) args -- don't force...
+           args))
+
+     (define (list-ref-inverse cs address store args) ;;this sequences the index first, hence can't find the index that will match a cs..
+       (let ((lst (first args))
+             (index (church-force church-*wildcard* address store (second args))))
+         (append (take lst (- index 1))
+                 (list (church-force cs address store (list-ref lst index)))
+                 (drop lst index))))
+
+      (define (first-inverse cs address store args)
+        (let ((pr (church-force church-*wildcard* address store (car args))))
+          (list (cons (church-force cs address store (car pr))
+                      (cdr pr)))))
+
+      (define (rest-inverse cs address store args)
+        (let ((pr (church-force church-*wildcard* address store (car args))))
+          (list (cons (car pr)
+                      (church-force cs address store (cdr pr))))))
+      
+
+     (define (equal?-inverse cs address store args)
+       (if (equal? cs '(#t))
+           (let* ((a (church-force church-*wildcard* address store (car args)))
+                  (b (church-force (list a) address store (cadr args))))
+             (list a b))
+           (map (lambda (a) (church-force church-*wildcard* address store a)) args)))
+     ))
+
+)

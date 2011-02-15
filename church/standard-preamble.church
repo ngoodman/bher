@@ -21,6 +21,14 @@
       '()
       (list-ref lst (sample-integer (length lst)))))
 
+ (define (equal? a b)
+   (lazify
+              (if (pair? a)
+                  (if (pair? b) (and (equal? (first a) (first b))
+                                     (equal? (rest a) (rest b)))
+                      false)
+                  (eqv? a b))) );;fixme
+
 ;old version: pure church
 ;(define uniform-draw 
 ;  (marg
