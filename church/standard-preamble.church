@@ -1,6 +1,16 @@
 ;;this standard preamble is a bunch of utilities and erps that one generally wants to have available in writing church programs.
 ;;it should be split up into coherent libraries...
 
+;;we make a lazified version of equal? so that it will properly handle lists of delayed values.
+;; (define (equal? a b)
+;;   (lazify
+;;    (if (pair? a)
+;;        (if (pair? b)
+;;            (and (equal? (first a) (first b))
+;;                 (equal? (rest a) (rest b)))
+;;            false)
+;;        (scheme-equal? a b))) )
+
 (define (sample thunk) (thunk))
 
 ;; (define (Y f)  ;; the Y-combinator, used by let conversions to build recursive functions
@@ -20,14 +30,6 @@
   (if (null? lst)
       '()
       (list-ref lst (sample-integer (length lst)))))
-
- (define (equal? a b)
-   (lazify
-              (if (pair? a)
-                  (if (pair? b) (and (equal? (first a) (first b))
-                                     (equal? (rest a) (rest b)))
-                      false)
-                  (eqv? a b))) );;fixme
 
 ;old version: pure church
 ;(define uniform-draw 
@@ -132,8 +134,10 @@
       init
       (apply fold
              (pair proc
-                   (pair (apply proc (append (single-map first lsts) (list init)))
+                   (pair (apply proc (put-at-end (single-map first lsts) init))
                          (single-map rest lsts))))))
+
+(define (put-at-end lst x) (if (null? lst) (pair x '()) (pair (first lst) (put-at-end (rest lst) x))))
 ;(define (unfold proc init stop) ...
 
 ; @desc

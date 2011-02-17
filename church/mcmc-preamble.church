@@ -18,6 +18,7 @@
          )
     (if (null? xrp-draws)
         (list 0.0 state) ;;if no xrps can be changed (eg all randomness in q-e) make trivial proposal.
+        ;(list 0.0 (first (counterfactual-update state normal-form-proc)))
         (let* ((chosen-xrp (uniform-draw xrp-draws))
                (ret1 ((xrp-draw-proposer chosen-xrp) state))
                (proposed-val (first ret1))

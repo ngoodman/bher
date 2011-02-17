@@ -211,8 +211,7 @@
                    [ (control-args) (rest control-part)]
                    [ (query-exp cond-exp) (apply values (take-right expr 2))])
        `(,query-name ,@control-args (lambda () (constrain
-                                                (lazify
-                                                 (begin ,@defs (pair ,cond-exp ,query-exp)) )
+                                                (lazify (begin ,@defs (pair ,cond-exp ,query-exp)))
                                                  ;(begin ,@defs (pair ,cond-exp (lambda () ,query-exp) )) )
                                                 (list (pair true *wildcard*)))
                      ))))
@@ -267,7 +266,7 @@
    (if (or (lambda? sexpr)
            (and (mem? sexpr) (lambda? (first sexpr))))
        (make-lazy sexpr)
-       `(list 'delayed (mem (lambda () ,(make-lazy sexpr))))))
+       `(list 'delayed (mem (lambda (d) ,(make-lazy sexpr))))))
 
  ;;do the fragment grammar thing to an arbitrary expression.
  ;;FIXME make alpha flexible..

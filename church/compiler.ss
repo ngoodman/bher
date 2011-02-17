@@ -153,22 +153,21 @@
     (else '()) ))
 
  
- ;;this happens after lazifying, it adds force to appropriate places (must also add forcing to primitives via header).
- (define (add-forcing sexpr)
-   (cond
-    ((begin? sexpr) `(begin ,@(map (lambda (e) `(force ,(add-forcing e))) (drop-right (rest sexpr) 1)) ,(add-forcing (last sexpr))))
-    ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (add-forcing (second binding))))
-                                    (second sexpr))
-                        ,(add-forcing (third sexpr))))
-    ((mem? sexpr) (map add-forcing sexpr))
-    ((quoted? sexpr) sexpr)
-    ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(add-forcing (lambda-body sexpr))))
-    ((if? sexpr) `(if (force ,(add-forcing (second sexpr))) ,(add-forcing (third sexpr)) ,(add-forcing (fourth sexpr))))
-    ((application? sexpr) `((force ,(add-forcing (first sexpr))) ,@(map add-forcing (rest sexpr))))
-    (else sexpr) ))
+ ;; ;;this happens after lazifying, it adds force to appropriate places (must also add forcing to primitives via header).
+ ;; (define (add-forcing sexpr)
+ ;;   (cond
+ ;;    ((begin? sexpr) `(begin ,@(map (lambda (e) `(force ,(add-forcing e))) (drop-right (rest sexpr) 1)) ,(add-forcing (last sexpr))))
+ ;;    ((letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (add-forcing (second binding))))
+ ;;                                    (second sexpr))
+ ;;                        ,(add-forcing (third sexpr))))
+ ;;    ((mem? sexpr) (map add-forcing sexpr))
+ ;;    ((quoted? sexpr) sexpr)
+ ;;    ((lambda? sexpr) `(lambda ,(lambda-parameters sexpr) ,(add-forcing (lambda-body sexpr))))
+ ;;    ((if? sexpr) `(if (force ,(add-forcing (second sexpr))) ,(add-forcing (third sexpr)) ,(add-forcing (fourth sexpr))))
+ ;;    ((application? sexpr) `((force ,(add-forcing (first sexpr))) ,@(map add-forcing (rest sexpr))))
+ ;;    (else sexpr) ))
 
  
-
  (define (constrain? sexpr) (tagged-list? sexpr 'church-constrain))
 
  ;; happens after addressing, instead of add-forcing; requires lazified program
@@ -176,7 +175,7 @@
    (define (%constrain sexpr)
      (cond [(mem? sexpr) (error sexpr "constraint-prop needs to happen after addressing, mem should have been desugared")]
            [(constrain? sexpr) `((lambda (cs) ,(%constrain (fourth sexpr))) ,(%unconstrain (fifth sexpr)))]
-           [(begin? sexpr) `(begin ,@(map (lambda (e) `(church-force church-*wildcard* address store ,(%unconstrain e)))
+           [(begin? sexpr) `(begin ,@(map (lambda (e) `(church-force church-*wildcard* address store ,(%unconstrain e))) ;;FIXME: do these need to be forced?
                                           (drop-right (rest sexpr) 1))
                                    ,(%constrain (last sexpr)))]
            [(letrec? sexpr) `(letrec ,(map (lambda (binding) (list (first binding) (%unconstrain (second binding))))
@@ -190,13 +189,14 @@
            [(application? sexpr)
             (let* ((address-expr (second sexpr))
                    (address-expr (if (equal? address-expr '(cons args mem-address))
-                                     '(cons (map (lambda (a) (church-force church-*wildcard* address store a)) args) mem-address) ;;force the args to mem in address 
+                                     '(cons (map (lambda (a) (church-force-deep church-*wildcard* address store a)) args) mem-address) ;;force the args to mem in address 
                                      address-expr)))
               (if (and (pair? (first sexpr)) (equal? (caar sexpr) 'lambda))
                   `(,(%unconstrain (first sexpr)) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3))) ;;do we the need special case?
                   `((church-force church-*wildcard* address store ,(%unconstrain (first sexpr))) cs ,address-expr ,(third sexpr) ,@(map %unconstrain (drop sexpr 3)))))]
            [else sexpr]))
    (define (%unconstrain sexpr) `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))
+   ;;`(%unconstrain sexpr))
    `((lambda (cs) ,(%constrain sexpr)) church-*wildcard*))
 
  )

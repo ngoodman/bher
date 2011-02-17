@@ -51,11 +51,12 @@
     ((procand) 'procand-inverse)
     ((cons) 'cons-inverse)
     ((car) 'first-inverse)
+    ((second) 'second-inverse)
     ((cdr) 'rest-inverse)
     ((list) 'list-inverse)
-    ((list-ref) 'list-ref-inverse)
+    ;((list-ref) 'id-list-ref-inverse)
     ((procor) 'procor-inverse)
-    ;((equal?) 'equal?-inverse)
+    ((equal?) 'equal?-inverse)
     ((eqv?) 'equal?-inverse)
     [else #f]))
 
@@ -66,12 +67,13 @@
                         (if inverse-symbol
                             `(apply ,symb (,inverse-symbol cs address store ,(if (null? nargs) 'args `(list ,@actual-args))))
                             (if (null? nargs)
-                                `(apply ,symb (map (lambda (a) (church-force church-*wildcard* address store a )) args))
-                                `(,symb ,@(map (lambda (a) `(church-force church-*wildcard* address store ,a)) actual-args)))))
+                                `(apply ,symb (map (lambda (a) (church-force-deep church-*wildcard* address store a )) args))
+                                ;`(begin (display ',symb)(newline) (apply ,symb (map (lambda (a) (church-force-deep church-*wildcard* address store a )) args)))
+                                `(,symb ,@(map (lambda (a) `(church-force-deep church-*wildcard* address store ,a)) actual-args)))))
                       ))
-    (if *storethreading*
-        `(lambda ,arguments (list ,application store))
-        `(lambda ,arguments ,application))))
+    ;(if *storethreading*
+     ;   `(lambda ,arguments (list ,application store))
+        `(lambda ,arguments ,application)))
  
  (define (primitive-def symb)
    `(define ,symb ,(wrap-primitive (un-prefix-church symb))))
@@ -130,7 +132,7 @@
      (define church-or ,(wrap-primitive 'procor))
      (define (procand . args) (if (null? args) #t (if (eq? #f (car args)) #f (apply procand (cdr args)))))
      (define church-and ,(wrap-primitive 'procand))
-
+     (define church-scheme-equal? ,(wrap-primitive 'equal? 2))
 
      (define (wildcard? v) (if (pair? v)
                                (if (eq? (car v) church-*wildcard*) #t (wildcard? (cdr v)))
@@ -149,8 +151,15 @@
      ;;for laziness and constraints:
      (define (church-force cs address store val)
        (if (and (pair? val) (eq? (car val) 'delayed))
-           (church-force cs address store ((cadr val) cs address store))
+           (church-force cs address store ((cadr val) cs address store 'd))
            val))
+     (define (church-force-deep cs address store val)
+       (let ((fv (church-force cs address store val)))
+         ;(display fv)(newline)
+         (if (pair? fv)
+             (cons (church-force-deep (if (wildcard? cs) cs (map car cs)) address store (car fv))
+                   (church-force-deep (if (wildcard? cs) cs (map cdr cs)) address store (cdr fv)))
+             fv)))
     
 
 ;;;
@@ -268,6 +277,7 @@
                              proposer)))
           (lambda (cs address store . args)
             ;(display "constraint set is ")(display cs)(display "  at address ")(display address)(display "\n")
+            ;(display "xrp draw store ")(display (store->xrp-draws store))(newline)
             (let* ((args (map (lambda (a) (church-force church-*wildcard* address store a)) args)) ;;FIXME: args doesn't need to be forced here, except for proposer...
                    (tmp (pull-outof-addbox (store->xrp-draws store) address)) ;;FIXME!! check if xrp-address has changed?
                    (old-xrp-draw (car tmp))
@@ -333,19 +343,22 @@
 
        (define mcmc-state->store first)
        (define mcmc-state->address third)
-       (define (mcmc-state->xrp-draws state) (store->xrp-draws (mcmc-state->store state)))
-       (define (mcmc-state->score state)
+       ;(define (mcmc-state->xrp-draws state) (store->xrp-draws (mcmc-state->store state)))
+       (define (church-mcmc-state->xrp-draws cs address store state) (store->xrp-draws (mcmc-state->store state)))
+       
+       (define (church-mcmc-state->score cs address store state) ;;FIXME: since this is primitive, it deep forces state, which includes the (delayed) query pair.
          (let ((cond-val (church-force church-*wildcard* (mcmc-state->address state) (mcmc-state->store state) (first (second state)))))
            (if (not (eq? #t cond-val))
                -inf.0 ;;enforce conditioner.
                (store->score (mcmc-state->store state)))))
 
        ;;this assumes that nfqp returns a thunk, which is the delayed query value. we force (apply) the thunk here, using a copy of the store from the current state.
-       (define (mcmc-state->query-value state)
+       (define (church-mcmc-state->query-value cs address store state) ;;FIXME: since this is primitive, it deep forces state, which includes the (delayed) query pair.
          ;,(if *storethreading*
               ;'(first (church-apply church-*wildcard* (mcmc-state->address state) (mcmc-state->store state) (cdr (second state)) '()))
-              (let ((store (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state)))))
-                (church-force church-*wildcard* (mcmc-state->address state) store (cdr (second state)))))
+              (let* ((mcmcstore (cons (first (mcmc-state->store state)) (cdr (mcmc-state->store state))))
+                     (val (church-force-deep church-*wildcard* (mcmc-state->address state) mcmcstore (cdr (second state))))) ;;FIXME: do we need the deep force?
+                val))
                  ;(church-force church-*wildcard* (mcmc-state->address state) store
                  ;              (church-apply church-*wildcard* (mcmc-state->address state) store (cdr (second state)) '()))))
 
@@ -368,7 +381,8 @@
        ;;  takes: an mcmc state, a normal-from-proc, and an optional list of interventions (which is is a list of xrp-draw new-value pairs to assert).
        ;;  returns: a new mcmc state and the bw/fw score of any creations and deletions.
        ;;must exit with store being the original store, which allows it to act as a 'counterfactual'. this is taken care of by wrapping as primitive (ie. non church- name).
-       (define (counterfactual-update state nfqp . interventions)
+       (define (church-counterfactual-update cs address store state nfqp . interventions)
+         ;(display "cfu, xrps: ")(display (church-mcmc-state->xrp-draws cs address store state))(newline)
          (let* ((new-tick (+ 1 (store->tick (mcmc-state->store state))))
                 (interv-store (make-store (fold (lambda (interv xrps)
                                                   (add-into-addbox (cdr (pull-outof-addbox xrps (xrp-draw-address (first interv))))
@@ -390,18 +404,18 @@
                                           ))
                 ;;application of the nfqp happens with interv-store, which is a fresh pair, so won't mutate original state.
                 ;;after application the store must be captured and put into the mcmc-state.
-                (ret ,(if *storethreading*
-                          '(church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) ;;return is already list of value + store.
-                          '(list (church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) interv-store) ;;capture store, which may have been mutated.
-                          ))
-                (value (first ret))
-                (new-store (second ret))
+                ;(ret ,(if *storethreading*
+                ;          '(church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) ;;return is already list of value + store.
+                ; '(list (church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()) interv-store)) 
+                (value (church-apply church-*wildcard* (mcmc-state->address state) interv-store nfqp '()))
+                (new-store interv-store) ;;capture store, which may have been mutated.
                 (ret2 (if (store->enumeration-flag new-store)
                           (list new-store 0)
                           (clean-store new-store))) ;;FIXME!! need to clean out unused xrp-stats?
                 (new-store (first ret2))
                 (cd-bw/fw (second ret2))
                 (proposal-state (make-mcmc-state new-store value (mcmc-state->address state))))
+           ;(display "cfu post xrps: ")(display (church-mcmc-state->xrp-draws cs address store proposal-state))(newline)
            (list proposal-state cd-bw/fw)))
 
        ;;we need to pull out the subset of new-state xrp-draws that were touched on this pass,
@@ -459,7 +473,7 @@
          ((equal? cs '(#t)) ;;handle singleton true cs.
           (map (lambda (a) (church-force '(#t) address store a)) args))
          (else
-          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
+          (church-force-deep church-*wildcard* address store args))))
 
      (define (procor-inverse cs address store args)
         (cond
@@ -472,8 +486,9 @@
          ((equal? cs '(#f)) ;;handle singleton false cs.
           (map (lambda (a) (church-force '(#f) address store a)) args))
          (else
-          (map (lambda (a) (church-force church-*wildcard* address store a)) args))))
+          (church-force-deep church-*wildcard* address store args))))
 
+     ;;note: cons does not force it's unconstrained args, to permit lazy pairs.
      (define (cons-inverse cs address store args)
        (if (and (singleton? cs) (pair? (car cs)))
            ;;handle singleton constraints that is a pair
@@ -490,7 +505,6 @@
            args))
 
      (define (list-inverse cs address store args)
-       ;(display cs)
        (if (and (singleton? cs) (list? (car cs)))
            ;;handle singleton constraints that is a list
            (map (lambda (x a)
@@ -500,28 +514,44 @@
            ;;otherwise just return (possibly delayed) args -- don't force...
            args))
 
-     (define (list-ref-inverse cs address store args) ;;this sequences the index first, hence can't find the index that will match a cs..
+     (define (id-list-ref-inverse cs address store args) ;;this sequences the index first, hence can't find the index that will match a cs..
        (let ((lst (first args))
              (index (church-force church-*wildcard* address store (second args))))
-         (append (take lst (- index 1))
-                 (list (church-force cs address store (list-ref lst index)))
-                 (drop lst index))))
+         (list (append (take lst index)
+                       (list (church-force cs address store (list-ref lst index)))
+                       (drop lst (+ 1 index)))
+               index)))
+     
+     (define (di-list-ref-inverse cs address store args) ;;this sequences the domain first, hence can't force the domain to contain a match to the cs..
+       (if (wildcard? cs)
+           args
+           (let* ((lst (church-force church-*wildcard* address store (first args))) ;;FIXME: force-list
+                  (index (second args))
+                  (cs-indices (map (lambda (c) (list-index lst c)) cs))) ;;FIXME: find duplicate entries in domain.
+             (list lst
+                   (church-force cs-indices address store index)))))
 
       (define (first-inverse cs address store args)
         (let ((pr (church-force church-*wildcard* address store (car args))))
           (list (cons (church-force cs address store (car pr))
                       (cdr pr)))))
 
+      
+      (define (second-inverse cs address store args)
+        (let ((pr (church-force church-*wildcard* address store (car args))))
+          (list (cons (car pr)
+                      (cons (church-force cs address store (cadr pr))
+                            (cddr pr))))))
+
       (define (rest-inverse cs address store args)
         (let ((pr (church-force church-*wildcard* address store (car args))))
           (list (cons (car pr)
                       (church-force cs address store (cdr pr))))))
-      
 
      (define (equal?-inverse cs address store args)
        (if (equal? cs '(#t))
-           (let* ((a (church-force church-*wildcard* address store (car args)))
-                  (b (church-force (list a) address store (cadr args))))
+           (let* ((a (church-force-deep church-*wildcard* address store (car args)))
+                  (b (church-force-deep (list a) address store (cadr args))))
              (list a b))
            (map (lambda (a) (church-force church-*wildcard* address store a)) args)))
      ))
