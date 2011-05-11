@@ -126,19 +126,19 @@
 
 (define inference-timing #f)
 
+(define (with-times proc)
+  (begin
+    (for-each display (list "start: " (current-date) "\n"))
+    (let ([return-value (proc)])
+      (for-each display (list "done: " (current-date) "\n"))
+      return-value)))
+  
 ;;;queries
 (define (repeated-mcmc-query-core initializer kernel num-samples)
   (let ([init-state (initializer)])
-    (when inference-timing
-          (display "initialized: ")
-          (display (current-date))
-          (display "\n"))
-    (let ([ret (mcmc-loop kernel init-state num-samples '())])
-      (when inference-timing
-            (display "done: ")
-            (display (current-date))
-            (display "\n"))
-      ret)))
+    (if inference-timing
+        (with-times (lambda () (mcmc-loop kernel init-state num-samples '())))
+        (mcmc-loop kernel init-state num-samples '()))))
 
 (define (mcmc-loop kernel state samples-left samples)
   (if (< samples-left 1)
