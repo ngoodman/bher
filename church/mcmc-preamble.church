@@ -6,6 +6,11 @@
 
 ;;NOTE: since these are church procedures, the xrp-list will accumulate draws due to accept/reject decisions and proposals. will this cause bad slowdown?
 
+;; accessors for the return value of counterfactual-update
+
+(define update->state first)
+(define update->cd-bw/fw second)
+
 ;;;kernels (mcmc transition distributions) and proposal distributions
 
 (define (basic-proposal-distribution state normal-form-proc)
@@ -25,8 +30,8 @@
                (proposal-fw-score (second ret1))
                (proposal-bw-score (third ret1))
                (ret2 (counterfactual-update state normal-form-proc (pair chosen-xrp proposed-val)))
-               (proposal-state (first ret2))
-               (cd-bw/fw (second ret2))
+               (proposal-state (update->state ret2))
+               (cd-bw/fw (update->cd-bw/fw ret2))
                (ind-fw (- (log (length (non-singleton-support-xrps state)))))
                (ind-bw (- (log (length (non-singleton-support-xrps proposal-state))))) )
           (list (+ (- proposal-bw-score proposal-fw-score) cd-bw/fw (- ind-bw ind-fw)) proposal-state)))))
@@ -39,7 +44,7 @@
   
 ;;FIXME!! this works badly... need constraint prop to do this right.
 (define (rejection-initializer normal-form-proc)
-  (let ((proposal-state (first (counterfactual-update (make-initial-mcmc-state) normal-form-proc)))) ;;don't care about bw/fw for init.
+  (let ((proposal-state (update->state (counterfactual-update (make-initial-mcmc-state) normal-form-proc)))) ;;don't care about bw/fw for init.
     (if (= -inf.0 (mcmc-state->score proposal-state))
         (begin (reset-store-xrp-draws)
                (rejection-initializer normal-form-proc))
@@ -77,7 +82,7 @@
                                       "\n  current temp: " (first temps)
                                       "\n  current val: " (mcmc-state->query-value mcmc-state) "\n")))
                 (let* ([nfqp (apply temps->nfqp (first temps))]
-                       [rescored-state (first (counterfactual-update mcmc-state nfqp))]
+                       [rescored-state (update->state (counterfactual-update mcmc-state nfqp))]
                        [rej-state ((basic-repeat-kernel rej-steps nfqp) rescored-state)])
                   (next-temp (rest temps)
                              rej-state))))))))
@@ -134,26 +139,32 @@
       return-value)))
   
 ;;;queries
-(define (repeated-mcmc-query-core initializer kernel num-samples)
+(define (repeated-mcmc-query-core initializer kernel state->sample num-samples)
   (let ([init-state (initializer)])
     (if inference-timing
-        (with-times (lambda () (mcmc-loop kernel init-state num-samples '())))
-        (mcmc-loop kernel init-state num-samples '()))))
+        (with-times (lambda () (mcmc-loop kernel init-state state->sample num-samples '())))
+        (mcmc-loop kernel init-state state->sample num-samples '()))))
 
-(define (mcmc-loop kernel state samples-left samples)
+(define (mcmc-loop kernel state state->sample samples-left samples)
   (if (< samples-left 1)
       (reverse samples)
-      (mcmc-loop kernel (kernel state) (- samples-left 1) (pair (mcmc-state->query-value state) samples))))
+      (mcmc-loop kernel
+                 (kernel state)
+                 state->sample
+                 (- samples-left 1)
+                 (pair (state->sample state) samples))))
 
 (define (mh-query samples lag normal-form-proc)
   (repeated-mcmc-query-core (lambda () (rejection-initializer normal-form-proc))
                             (basic-repeat-kernel lag normal-form-proc)
+                            mcmc-state->query-value
                             samples))
 
 (define (mh-query/annealed-init temps samples lag rej-steps temps->nfqp)
   (let ([normal-form-proc (apply temps->nfqp (first temps))])
     (repeated-mcmc-query-core (lambda () (annealing-initializer rej-steps temps temps->nfqp))
                               (basic-repeat-kernel lag normal-form-proc)
+                              mcmc-state->query-value
                               samples)))
 
 
@@ -174,8 +185,8 @@
     (let* (;(dummy (display (map mcmc-state->query-value population))) (dummy (display "\n"))
            ;;step forward temps.
            (rets (map (lambda (state) (counterfactual-update state (apply temps->nfqp (first temps)))) population))
-           (new-population (map first rets))
-           (cd-bw/fw (map second rets))
+           (new-population (map update->state rets))
+           (cd-bw/fw (map update->cd-bw/fw rets))
            (weights (map (lambda (old-weight old-state new-state cd-bw/fw) (+ old-weight
                                                                               (- (mcmc-state->score new-state) (mcmc-state->score old-state))
                                                                               cd-bw/fw))
