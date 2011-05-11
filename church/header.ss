@@ -459,8 +459,18 @@
        ;(define (church-with-proposer address store fn proposer)
        ;  'foo
        ;  )
+
+
+       ;; MCMC with counterfactuals
+
+       (define *intervention* (make-parameter #f))
+
+       (define (church-*intervention* cs address store)
+         (*intervention*))
          
-         
+       (define (church-with-interventions cs address store proc)
+         (parameterize ([*intervention* #t])
+                       (church-force-deep church-*wildcard* address store (proc cs address store))))
 
        )
    )

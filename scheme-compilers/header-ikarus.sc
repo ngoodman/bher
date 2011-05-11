@@ -11,6 +11,8 @@
  (rename (only (ikarus)
                gensym ;;this is needed.
                pretty-print
+               parameterize ;; interventions
+               make-parameter ;; interventions
                exact->inexact) ;;this isn't really needed.
          (gensym scheme-gensym))
 
