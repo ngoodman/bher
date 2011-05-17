@@ -239,18 +239,17 @@
 ;; - (with-interventions proc) -- set *intervention* parameter to #t during application of proc
 
 (define (mcmc-state->counterfactual-value state normal-form-proc)
-  (let* ([counterfactual-state (update->state (with-interventions (lambda () (counterfactual-update state normal-form-proc))))])
+  (let* ([counterfactual-state (update->state (with-interventions state (lambda () (counterfactual-update state normal-form-proc))))])
     (mcmc-state->query-value counterfactual-state)))
 
-(define (counterfactual-query samples lag normal-form-proc)
+(define (counterfactual-query num-samples lag normal-form-proc)
   (repeated-mcmc-query-core (lambda () (rejection-initializer normal-form-proc))
-                            (basic-repeat-kernel lag normal-form-proc)
-                            (lambda (s)
-                              (let* ([state (force-deep s)]
-                                     [actual-value (mcmc-state->query-value state)]
-                                     [counterfactual-value (mcmc-state->counterfactual-value state normal-form-proc)])
-                                (list actual-value counterfactual-value)))
-                            samples))
+                                           (basic-repeat-kernel lag normal-form-proc)
+                                           (lambda (state)
+                                             (let* ([actual-value (force-deep (mcmc-state->query-value state))]
+                                                    [counterfactual-value (mcmc-state->counterfactual-value state normal-form-proc)])
+                                               (list actual-value counterfactual-value)))
+                                           num-samples))
 
 (define (intervene value intervention-value)
   (if (*intervention*)

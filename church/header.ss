@@ -468,9 +468,14 @@
        (define (church-*intervention* cs address store)
          (*intervention*))
          
-       (define (church-with-interventions cs address store proc)
+       (define (church-with-interventions cs address store state proc)
          (parameterize ([*intervention* #t])
-                       (church-force-deep church-*wildcard* address store (proc cs address store))))
+                       (church-force-deep church-*wildcard*
+                                          (mcmc-state->address state)
+                                          (mcmc-state->store state)
+                                          (proc church-*wildcard*
+                                                (mcmc-state->address state)
+                                                (mcmc-state->store state)))))
 
        )
    )
