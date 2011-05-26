@@ -20,10 +20,12 @@
          alist->trie)
 
  (import (rnrs)
-         (_srfi :1)
-         (church readable-scheme)
+         ;(_srfi :1)
+         (except (srfi :1) remove partition member map for-each fold-right find filter assoc)
+         (scheme-tools readable-scheme)
+         ;(church readable-scheme)
          (only (ikarus) pretty-print))
-
+ 
  (define none 'none)
  
  ;; look for first element x that matches pred, replace with (update x)

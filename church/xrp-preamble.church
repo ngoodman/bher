@@ -6,12 +6,15 @@
 (define (make-stateless-xrp xrp-name sampler scorer . proposal-support)
   (make-xrp xrp-name
             (lambda (stats hyperparams args) ;;sample
-              (let ((value (apply sampler args)))
+              (let* ((value (apply sampler args))
+                     (value (if (continuous? value) (tapify (untapify value)) value)))
                 (list value stats (scorer args value))))
             (lambda (value stats hyperparams args) ;;incr-stats
-              (list value stats (scorer args value)))
+              (let ((value (if (continuous? value) (tapify (untapify value)) value)))
+                (list value stats (scorer args value))))
             (lambda (value stats hyperparams args) ;;decr-stats
-              (list value stats (scorer args value)))
+              (let ((value (if (continuous? value) (tapify (untapify value)) value)))
+                (list value stats (scorer args value))))
             'scorer;;FIXME
             '() ;;init-stats
             '() ;;hyperparams

@@ -25,6 +25,7 @@
 
  (define *storethreading* false)
  (define *lazy* false)
+ (define *AD* true) ;;when AD is true, continuous XRP return values will be tapified.
 
  (define (prefix-church symb) (string->symbol (string-append "church-" (symbol->string symb))))
  (define (church-symbol? symb) (and (< 7 (length (string->list (symbol->string symb))))
@@ -71,24 +72,24 @@
             `(apply proc address store args)))
      ;(define (church-eval address store sexpr env) (error 'eval "eval not implemented"))
 
-     ;;requires compile, eval, and environment to be available from underlying scheme....
-     (define (church-eval addr store sexpr)
-       ;(display (compile sexpr '()) ))
-       ((eval `(letrec ,(map (lambda (def)
-                              (if (symbol? (cadr def))
-                                  (list (cadr def) (caddr def))
-                                  `(,(car (cadr def)) (lambda ,(cdr (cadr def)) ,@(cddr def)))))
-                            (compile (list sexpr) '()))
-                church-main)
-             (environment '(rnrs)
-                          '(rnrs mutable-pairs)
-                          '(_srfi :1)
-                          '(rename (church external math-env) (sample-discrete discrete-sampler))
-                          '(rename (only (ikarus) gensym pretty-print exact->inexact) (gensym scheme-gensym))
-                          '(_srfi :19)
-                          '(church compiler)
-                          '(rnrs eval)  ))
-             addr store))
+     ;; ;;requires compile, eval, and environment to be available from underlying scheme....
+     ;; (define (church-eval addr store sexpr)
+     ;;   ;(display (compile sexpr '()) ))
+     ;;   ((eval `(letrec ,(map (lambda (def)
+     ;;                          (if (symbol? (cadr def))
+     ;;                              (list (cadr def) (caddr def))
+     ;;                              `(,(car (cadr def)) (lambda ,(cdr (cadr def)) ,@(cddr def)))))
+     ;;                        (compile (list sexpr) '()))
+     ;;            church-main)
+     ;;         (environment '(rnrs)
+     ;;                      '(rnrs mutable-pairs)
+     ;;                      '(_srfi :1)
+     ;;                      '(rename (church external math-env) (sample-discrete discrete-sampler))
+     ;;                      '(rename (only (ikarus) gensym pretty-print exact->inexact) (gensym scheme-gensym))
+     ;;                      '(_srfi :19)
+     ;;                      '(church compiler)
+     ;;                      '(rnrs eval)  ))
+     ;;         addr store))
      
      (define (church-get-current-environment address store) (error 'gce "gce not implemented"))
      (define church-true #t)
@@ -155,22 +156,22 @@
      ;; doesn't attempt to maintain order.
 
      ;; alist addbox
-     (define add-into-addbox alist-insert)
-     (define pull-outof-addbox alist-pop)
-     (define make-addbox make-empty-alist)
-     (define addbox->alist (lambda (addbox) addbox))
-     (define alist->addbox (lambda (alist) alist))
-     (define addbox-size alist-size)
-     (define addbox-empty? alist-empty?)
+     ;; (define add-into-addbox alist-insert)
+     ;; (define pull-outof-addbox alist-pop)
+     ;; (define make-addbox make-empty-alist)
+     ;; (define addbox->alist (lambda (addbox) addbox))
+     ;; (define alist->addbox (lambda (alist) alist))
+     ;; (define addbox-size alist-size)
+     ;; (define addbox-empty? alist-empty?)
 
      ;; trie addbox
-     ;; (define make-addbox make-empty-trie)
-     ;; (define add-into-addbox trie-insert)
-     ;; (define pull-outof-addbox trie-pop)
-     ;; (define addbox->alist trie->alist)
-     ;; (define alist->addbox alist->trie)
-     ;; (define addbox-size trie-size)
-     ;; (define addbox-empty? trie-empty?)
+     (define make-addbox make-empty-trie)
+     (define add-into-addbox trie-insert)
+     (define pull-outof-addbox trie-pop)
+     (define addbox->alist trie->alist)
+     (define alist->addbox alist->trie)
+     (define addbox-size trie-size)
+     (define addbox-empty? trie-empty?)
 
      (define (make-xrp-draw address value xrp-name proposer-thunk ticks score support)
        (list address value xrp-name proposer-thunk ticks score support))
@@ -243,6 +244,7 @@
                                       (incr-stats address store (first support-vals) stats hyperparams args)
                                       (sample address store stats hyperparams args)) ;;FIXME: returned store?
                                   (incr-stats address store (xrp-draw-value old-xrp-draw) stats hyperparams args)))
+                         ;(value ,(if *AD* '(if (continuous? (first tmp)) (tapify (first tmp)) (first tmp)) '(first tmp)))
                          (value (first tmp))
                          (new-stats (list (second tmp) (store->tick store)))
                          (incr-score (third tmp)) ;;FIXME: need to catch measure zero xrp situation?
@@ -277,6 +279,18 @@
          (if (not (eq? #t (first (second state))))
              -inf.0 ;;enforce conditioner.
              (store->score (mcmc-state->store state))))
+        ;;compute the gradient of the score of a trace-container wrt any tapified erp values.
+         (define (mcmc-state->gradient state)
+           (first
+            (second
+             (xy-gradient-R (lambda (f xrp-draws) (filter-map (lambda (x) (if (tape? (xrp-draw-value x))
+                                                                              (cons (xrp-draw-address x) (f (xrp-draw-value x))) ;;FIXME: needs to be shaped like an xrp-draw?
+                                                                              #f))
+                                                              (map cdr xrp-draws))) ;map-independent
+                            (addbox->alist (mcmc-state->xrp-draws state)) ;x-reverse
+                            (mcmc-state->score state) ;y-reverse
+                            tapify))))
+         
 
        ;;this assumes that nfqp returns a thunk, which is the delayed query value. we force (apply) the thunk here, using a copy of the store from the current state.
        (define (mcmc-state->query-value state)

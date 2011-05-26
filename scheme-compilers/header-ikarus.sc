@@ -1,8 +1,8 @@
 (import
- (rnrs)
+ ;;(rnrs)
  ;;for AD fun comment these in and (rnrs) out:
- ;;(except (rnrs) real? negative? positive? zero? >= <= > < = atan cos sin expt log exp sqrt / * - +)
- ;;(church utils AD)
+ (except (rnrs) real? negative? positive? zero? >= <= > < = atan cos sin expt log exp sqrt / * - + min)
+ (church utils AD)
  
  (rnrs mutable-pairs) ;;because the header uses set-car! when note storethreading.
  (_srfi :1) ;;provides some list functions that are used.
@@ -22,4 +22,8 @@
  (except (_srfi :69) string-ci-hash string-hash) ;;used for CGIS, can comment out otherwise...
 
  )
+
+;;for score gradients:
+(define tapify (make-tapifier))
+(define (min a b) (if (< a b) a b)) ;;FIXME: proper dmin? 
 

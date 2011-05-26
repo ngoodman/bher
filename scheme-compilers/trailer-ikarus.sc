@@ -3,6 +3,7 @@
 (randomize-rng)
 
 (display
-(church-main '(top) (make-empty-store))
-) (newline)
+ (untapify
+  (church-main '(top) (make-empty-store))))
+(newline)
 ;;done

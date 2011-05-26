@@ -235,6 +235,11 @@
    (tempered-query? 'mh-query/annealed-init expr))
  (define (desugar-mh-query/annealed-init expr)
    (desugar-tempered-query 'mh-query/annealed-init expr))
+
+ (define (annealed-gradient-ascent? expr)
+   (tempered-query? 'annealed-gradient-ascent expr))
+ (define (desugar-annealed-gradient-ascent expr)
+   (desugar-tempered-query 'annealed-gradient-ascent expr))
  
 
  ;;lazify adds delay to an expression. make sure that the expression is fully-desugarred first!
@@ -317,12 +322,13 @@
  (register-query-sugar 'mh-query)
  (register-query-sugar 'rejection-query)
  (register-query-sugar 'enumeration-query)
+ (register-query-sugar 'gradient-ascent)
  ;(register-query-sugar 'primitive-laplace-mh-query 'laplace-mh-query)
  ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
 
  (register-sugar! psmc-query? desugar-psmc-query 1)
  (register-sugar! mh-query/annealed-init? desugar-mh-query/annealed-init 1)
-
+ (register-sugar! annealed-gradient-ascent? desugar-annealed-gradient-ascent 1)
 
 
  (register-sugar! fragment-lambda? desugar-fragment-lambda)
