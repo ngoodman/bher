@@ -25,5 +25,6 @@
 
 ;;for score gradients:
 (define tapify (make-tapifier))
-(define (min a b) (if (< a b) a b)) ;;FIXME: proper dmin? 
+(define (min a b) (if (< a b) a b)) ;;FIXME: proper dmin?
+(define (continuous? x) (and (real? x) (not (fixnum? x))))
 
