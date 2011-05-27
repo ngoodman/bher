@@ -160,6 +160,14 @@
           (pair (first lst) (filter pred (rest lst)))
           (filter pred (rest lst)))))
 
+(define (filter-map proc lst)
+  (if (null? lst)
+      '()
+      (let ([val (proc (first lst))])
+        (if val
+            (pair val (filter-map proc (rest lst)))
+            (filter-map proc (rest lst))))))
+
 (define (list-index pred lst . i)
   (if (null? lst)
       false
