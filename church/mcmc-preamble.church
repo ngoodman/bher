@@ -8,21 +8,31 @@
 
 ;;;kernels (mcmc transition distributions) and proposal distributions
 
-(define (basic-proposal-distribution state normal-form-proc)
-  (if (addbox-empty? (mcmc-state->xrp-draws state))
-      (list 0.0 state) ;;if no xrps have been drawn (eg all randomness in q-e) make trivial proposal. (still have to update..??)
-      (let* ((chosen-xrp (rest (uniform-draw (addbox->alist (mcmc-state->xrp-draws state))))) ;;rest is because xrp-draws is an addbox, so address is first.
-             (ret1 ((xrp-draw-proposer chosen-xrp) state))
-             (proposed-val (first ret1))
-             (proposal-fw-score (second ret1))
-             (proposal-bw-score (third ret1))
-             (ret2 (counterfactual-update state normal-form-proc (pair chosen-xrp proposed-val)))
-             (proposal-state (first ret2))
-             (cd-bw/fw (second ret2))
-             (ind-fw (- (log (addbox-size (mcmc-state->xrp-draws state)))))
-             (ind-bw (- (log (addbox-size (mcmc-state->xrp-draws proposal-state))))) )
-        (list (+ (- proposal-bw-score proposal-fw-score) cd-bw/fw (- ind-bw ind-fw)) proposal-state))))
+(define (proposable-xrps state proposable?)
+  (filter-map (lambda (v) (if (proposable? (rest v)) (rest v) #f))
+              (addbox->alist (mcmc-state->xrp-draws state))))
 
+(define (selective-proposal-distribution state normal-form-proc proposable?)
+  (if (addbox-empty? (mcmc-state->xrp-draws state))
+      (list 0.0 state) ;; if no xrps have been drawn (eg all randomness in q-e) make trivial proposal. (still have to update..??)
+      (let ((proposal-xrps (proposable-xrps state proposable?)))
+        (if (null? proposal-xrps)
+            (list 0.0 state)
+            (let* ((chosen-xrp (uniform-draw proposal-xrps)) ;; xrp-draws is an addbox, so address is first.
+                   (ret1 ((xrp-draw-proposer chosen-xrp) state))
+                   (proposed-val (first ret1))
+                   (proposal-fw-score (second ret1))
+                   (proposal-bw-score (third ret1))
+                   (ret2 (counterfactual-update state normal-form-proc (pair chosen-xrp proposed-val)))
+                   (proposal-state (first ret2))
+                   (cd-bw/fw (second ret2))
+                   (ind-fw (- (log (length proposal-xrps))))
+                   (ind-bw (- (log (length (proposable-xrps proposal-state proposable?))))))
+              (list (+ (- proposal-bw-score proposal-fw-score) cd-bw/fw (- ind-bw ind-fw)) proposal-state))))))
+
+(define (basic-proposal-distribution state normal-form-proc)
+  (selective-proposal-distribution state normal-form-proc (lambda (xrp-draw) true)))
+  
 ;;FIXME!! this works badly... need constraint prop to do this right.
 (define (rejection-initializer normal-form-proc)
   (let ((proposal-state (first (counterfactual-update (make-initial-mcmc-state) normal-form-proc)))) ;;don't care about bw/fw for init.
@@ -171,7 +181,7 @@
                (grad (mcmc-state->gradient state))
                (xrp-draws (mcmc-state->xrp-draws state))
                (xrp-changes (map (lambda (gv) (let ((xrp-draw (first (pull-outof-addbox xrp-draws (first gv)))))
-                                                (pair xrp-draw (+ (xrp-draw-value xrp-draw) (* step-size (rest gv))))))
+                                           (pair xrp-draw (+ (xrp-draw-value xrp-draw) (* step-size (rest gv))))))
                                          grad))
                (proposal (apply counterfactual-update (pair state (pair nfqp xrp-changes)))))
           (loop (first proposal)
@@ -179,10 +189,147 @@
                 (rest temps))))))
 
 
+;; --------------------------------------------------------------------
+;; Hybrid Monte Carlo
 
-;;;
-;;this is the code for psmc (population sequential monte carlo). this is particle filtering with an mcmc rejuvenation kernel and (eventually) a crossover move.
-;;the sugarred call looks like (psmc-query temp-args temps popsize kernel-iterations ...defs... q-exp c-exp).
+(define (continuous-xrp-draw? xrp-draw)
+  (tape? (xrp-draw-value xrp-draw)))
+
+(define (discrete-xrp-draw? xrp-draw)
+  (not (continuous-xrp-draw? xrp-draw)))
+
+(define (alist-map proc alist)
+  (if (null? alist)
+      '()
+      (let ([fst (first alist)])
+        (pair (proc (first fst)
+                    (rest fst))
+              (alist-map proc (rest alist))))))
+
+(define (order-values alist order)
+  (let ([trie (alist->trie alist)])
+    (map (lambda (key) (first (trie-pop trie key)))
+         order)))
+
+(define (scalar* sc lst)
+  (map (lambda (x) (* sc x)) lst))
+
+(define (list+ a b)
+  (map + a b))
+
+(define (list* a b)
+  (map * a b))
+
+(define (increment-state state nfqp increments)
+  (let* ([xrp-draws (mcmc-state->xrp-draws state)]
+         [xrp-changes (alist-map (lambda (addr inc)
+                                   (let ([xrp-draw (first (pull-outof-addbox xrp-draws addr))])
+                                     (pair xrp-draw (+ (xrp-draw-value xrp-draw) inc))))
+                                 increments)])
+    (apply counterfactual-update
+           (pair state (pair nfqp xrp-changes)))))
+
+;; leapfrog-step
+;; 
+;; arguments:
+;;  nfqp      normal form query proc
+;;  q         mcmc-state
+;;  a:p       alist of momenta (address -> real)
+;;  m-inv     list of reals (address order same as a:p)
+;;  dt        real
+;; 
+;; returns:
+;;  q-next    new mcmc-state
+;;  a:p-next  alist of new momenta (address -> real)
+;;  bw-fw     real
+(define (leapfrog-step nfqp q a:p m-inv dt)
+  (let* ([addresses (map first a:p)]
+         [p (map rest a:p)]
+         [q-gradient (order-values (mcmc-state->gradient q) addresses)]
+         [p-half (list+ p (scalar* (/ dt 2.0) q-gradient))]
+         [increments (scalar* dt (list* m-inv p-half))]
+         [qn/bwfw (increment-state q nfqp (map pair addresses increments))]
+         [q-next-gradient (order-values (mcmc-state->gradient (first qn/bwfw)) addresses)]
+         [p-next (list+ p-half (scalar* (/ dt 2.0) q-next-gradient))])
+    (list (first qn/bwfw)
+          (map pair addresses p-next)
+          (second qn/bwfw))))
+
+;; FIXME: m-inv should be parameters, or set cleverly.
+(define (leapfrog nfqp q a:p dt steps . maybe-bw/fw)
+  (let ((bw-fw (if (null? maybe-bw/fw) 0.0 (first maybe-bw/fw)))
+        (m-inv (make-list (length a:p) 1.0)))
+    (if (= steps 0)
+        (list q a:p bw-fw)
+        (let ([qn/pn/bwfw+ (leapfrog-step nfqp q a:p m-inv dt)])
+          (leapfrog nfqp
+                    (first qn/pn/bwfw+)
+                    (second qn/pn/bwfw+)
+                    dt
+                    (- steps 1)
+                    (+ bw-fw (third qn/pn/bwfw+)))))))
+
+;; Because the leapfrog integrator is reversible (and volume
+;; preserving), the only f/b-probs come from trace-updates.
+(define (make-leapfrog-proposal nfqp dt steps)
+  (lambda (q-p)
+    (let ([q/p/bwfw (leapfrog nfqp (first q-p) (second q-p) dt steps)])
+      (list (third q/p/bwfw)
+            (list (first q/p/bwfw)
+                  (second q/p/bwfw))))))
+
+;; FIXME: inv-mass terms
+;; FIXME: term for norm of mass.
+(define (hamiltonian-score q-p)
+  (let ((q (first q-p))
+        (a:p (second q-p)))
+    (let ([score (mcmc-state->score q)])
+      (if (equal? score -inf.0)
+          -inf.0
+          (+ score (* -0.5 (apply + (map (lambda (x) (expt x 2)) (map rest a:p)))))))))
+
+(define (make-leapfrog-kernel nfqp dt leapfrog-steps)
+  (make-mh-kernel (make-leapfrog-proposal nfqp dt leapfrog-steps)
+                  hamiltonian-score))
+
+(define (momentum-prior state)
+  (fold (lambda (addr/draw momenta)
+          (if (continuous-xrp-draw? (rest addr/draw))
+              (pair (pair (first addr/draw)
+                          (sample-gaussian 0.0 1.0))
+                    momenta)
+              momenta))
+        '()
+        (addbox->alist (mcmc-state->xrp-draws state))))
+
+;; Generate appropriate momenta from the momentum prior (this is
+;; secretly a kernel on momenta). Then apply leapfrog kernel, return
+;; the mcmc state (if we kept the momenta we'd reverse them).
+(define (make-hmc-kernel nfqp dt leapfrog-steps)
+  (let ([leapfrog-kernel (make-leapfrog-kernel nfqp dt leapfrog-steps)])
+    (lambda (state)
+      (let ([momenta (momentum-prior state)])
+        (first (leapfrog-kernel (list state momenta)))))))
+
+(define (hmc-query num-samples lag dt leapfrog-steps nfqp)
+  (repeated-mcmc-query-core
+   (lambda () (rejection-initializer nfqp))
+   (repeat-kernel lag
+                  (cycle-kernel (make-hmc-kernel nfqp dt leapfrog-steps)
+                                (make-mh-kernel (lambda (state)
+                                                  (selective-proposal-distribution state
+                                                                                   nfqp
+                                                                                   discrete-xrp-draw?))
+                                                mcmc-state->score)))
+   num-samples))
+
+
+;; --------------------------------------------------------------------
+;; this is the code for psmc (population sequential monte carlo). this
+;; is particle filtering with an mcmc rejuvenation kernel and
+;; (eventually) a crossover move.  the sugarred call looks like
+;; (psmc-query temp-args temps popsize kernel-iterations
+;; ...defs... q-exp c-exp).
 (define (psmc-query temps popsize lag temps->nfqp)
   (map mcmc-state->query-value (smc-core temps popsize lag temps->nfqp)))
 

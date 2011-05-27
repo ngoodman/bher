@@ -323,6 +323,7 @@
  (register-query-sugar 'rejection-query)
  (register-query-sugar 'enumeration-query)
  (register-query-sugar 'gradient-ascent)
+ (register-query-sugar 'hmc-query)
  ;(register-query-sugar 'primitive-laplace-mh-query 'laplace-mh-query)
  ;(register-query-sugar 'primitive-gradient-query 'gradient-query)
 
