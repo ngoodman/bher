@@ -236,6 +236,11 @@
  (define (desugar-mh-query/annealed-init expr)
    (desugar-tempered-query 'mh-query/annealed-init expr))
 
+  (define (hmc-query/annealed-init? expr)
+   (tempered-query? 'hmc-query/annealed-init expr))
+ (define (desugar-hmc-query/annealed-init expr)
+   (desugar-tempered-query 'hmc-query/annealed-init expr))
+
  (define (annealed-gradient-ascent? expr)
    (tempered-query? 'annealed-gradient-ascent expr))
  (define (desugar-annealed-gradient-ascent expr)
@@ -329,6 +334,7 @@
 
  (register-sugar! psmc-query? desugar-psmc-query 1)
  (register-sugar! mh-query/annealed-init? desugar-mh-query/annealed-init 1)
+ (register-sugar! hmc-query/annealed-init? desugar-hmc-query/annealed-init 1)
  (register-sugar! annealed-gradient-ascent? desugar-annealed-gradient-ascent 1)
 
 

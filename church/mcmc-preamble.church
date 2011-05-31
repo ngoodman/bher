@@ -47,8 +47,9 @@
 ;; - rescore
 ;; - do rejuvenation steps
 ;; finally, check whether p != 0 (if 0, restart at top)
-(define (annealing-initializer rej-steps temps:low->high temps->nfqp)
-  (let* ([temps:high->low (reverse temps:low->high)]
+(define (annealing-initializer rej-steps temps:low->high temps->nfqp . rejuv-kernel-builder)
+  (let* ([rejuv-kernel-builder (if (null? rejuv-kernel-builder) (lambda (nfqp) (basic-repeat-kernel rej-steps nfqp)) (first rejuv-kernel-builder))]
+         [temps:high->low (reverse temps:low->high)]
          [normal-form-proc (apply temps->nfqp (first temps:high->low))]
          [initial-state (begin (reset-store-xrp-draws)
                                (rejection-initializer normal-form-proc))])
@@ -58,7 +59,7 @@
           (begin
             (when verbose-init
                   (display "annealing-initializer: failed, restarting at top ...\n"))
-            (annealing-initializer rej-steps temps:low->high temps->nfqp))
+            (annealing-initializer rej-steps temps:low->high temps->nfqp rejuv-kernel-builder))
           (if (null? temps)
               (begin
                 (when verbose-init
@@ -70,10 +71,12 @@
                                 (list "annealing-initializer:\n"
                                       "  temps remaining: " (length temps)
                                       "\n  current temp: " (first temps)
-                                      "\n  current val: " (mcmc-state->query-value mcmc-state) "\n")))
+                                      ;"\n  current val: " (untapify (mcmc-state->query-value mcmc-state))
+                                      "\n")))
                 (let* ([nfqp (apply temps->nfqp (first temps))]
                        [rescored-state (first (counterfactual-update mcmc-state nfqp))]
-                       [rej-state ((basic-repeat-kernel rej-steps nfqp) rescored-state)])
+                       [kernel (rejuv-kernel-builder nfqp)]
+                       [rej-state (kernel rescored-state)])
                   (next-temp (rest temps)
                              rej-state))))))))
 
@@ -154,38 +157,41 @@
 ;;;
 ;;simple gradient ascent on continuous variables, using AD.
 
-(define (gradient-ascent steps step-size nfqp)
-  (let loop ((state (rejection-initializer nfqp))
-             (trail '())
-             (steps-remaining steps))
-    (if (< steps-remaining 1)
-        (reverse trail);(mcmc-state->query-value state)
-        (let* ((grad (mcmc-state->gradient state))
+(define (make-gradient-step step-size nfqp)
+  (lambda (state)
+    (let* ((grad (mcmc-state->gradient state))
                (xrp-draws (mcmc-state->xrp-draws state))
                (xrp-changes (map (lambda (gv) (let ((xrp-draw (first (pull-outof-addbox xrp-draws (first gv)))))
-                                                (pair xrp-draw (+ (xrp-draw-value xrp-draw) (* step-size (rest gv))))))
+                                                (pair xrp-draw (+ (xrp-draw-value xrp-draw) (* step-size (sigmoid (rest gv)))))))
                                          grad))
                (proposal (apply counterfactual-update (pair state (pair nfqp xrp-changes)))))
-          ;(display grad) (newline)
-          (loop (first proposal)
-                (pair (mcmc-state->query-value (first proposal)) trail)
-                (- steps-remaining 1))))))
+      (first proposal))))
 
+(define (sigmoid x) (- (/ 1 (+ 1 (exp (- x)))) 0.5))
+
+(define (gradient-ascent steps step-size nfqp)
+  (let ((gstep (make-gradient-step step-size nfqp)))
+    (let loop ((state (rejection-initializer nfqp))
+               (trail '())
+               (steps-remaining steps))
+      (if (< steps-remaining 1)
+          (reverse trail)
+          (let ((newstate (gstep state)))
+            (loop newstate
+                  (pair (mcmc-state->query-value newstate) trail)
+                  (- steps-remaining 1)))))))
+  
 (define (annealed-gradient-ascent temps:high->low step-size temps->nfqp)
   (let loop ((state (rejection-initializer (apply temps->nfqp (first temps:high->low))))
              (trail '())
              (temps temps:high->low))
     (if (null? temps)
-        (reverse trail);(mcmc-state->query-value state)
-        (let* ((nfqp (apply temps->nfqp (first temps)))
-               (grad (mcmc-state->gradient state))
-               (xrp-draws (mcmc-state->xrp-draws state))
-               (xrp-changes (map (lambda (gv) (let ((xrp-draw (first (pull-outof-addbox xrp-draws (first gv)))))
-                                           (pair xrp-draw (+ (xrp-draw-value xrp-draw) (* step-size (rest gv))))))
-                                         grad))
-               (proposal (apply counterfactual-update (pair state (pair nfqp xrp-changes)))))
-          (loop (first proposal)
-                (pair (mcmc-state->query-value (first proposal)) trail)
+        (reverse trail)
+        (let ((newstate ((make-gradient-step step-size (apply temps->nfqp (first temps))) state)))
+          (display "ascent loop, temp=")(display (first temps));(display " score=")(display (untapify (mcmc-state->score newstate)))
+          (newline)
+          (loop newstate
+                (pair (mcmc-state->query-value newstate) trail)
                 (rest temps))))))
 
 
@@ -322,6 +328,21 @@
                                                                                    discrete-xrp-draw?))
                                                 mcmc-state->score)))
    num-samples))
+
+(define (hmc-query/annealed-init temps init-step-size num-samples lag dt leapfrog-steps temps->nfqp)
+  (let ([nfqp (apply temps->nfqp (first temps))])
+    (repeated-mcmc-query-core
+     (lambda () (annealing-initializer 1 temps temps->nfqp
+                                       (lambda (nfqp) (make-gradient-step init-step-size nfqp)))) ;;do gradient ascent while annealing...
+     (repeat-kernel lag
+                    (cycle-kernel (make-hmc-kernel nfqp dt leapfrog-steps)
+                                  (make-mh-kernel (lambda (state)
+                                                    (selective-proposal-distribution state
+                                                                                     nfqp
+                                                                                     discrete-xrp-draw?))
+                                                  mcmc-state->score)))
+     num-samples)))
+
 
 
 ;; --------------------------------------------------------------------
