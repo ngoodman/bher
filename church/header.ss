@@ -19,7 +19,7 @@
  (export generate-header)
 
  (import (rnrs)
-         (_srfi :1) ; lists
+         (scheme-tools srfi-compat :1) ; lists
          (church readable-scheme)
          )
 

@@ -10,7 +10,7 @@
 
  (import (rnrs)
          (church readable-scheme)
-         (_srfi :1))
+         (scheme-tools srfi-compat :1))
  
 ;;;some syntax utils
  (define (mem? sexpr) (tagged-list? sexpr 'mem))

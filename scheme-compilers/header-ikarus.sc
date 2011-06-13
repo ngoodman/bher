@@ -22,10 +22,11 @@
 
  (except (_srfi :69) string-ci-hash string-hash) ;;used for CGIS, can comment out otherwise...
 
+ (only (scheme-tools) normalize string-sort bin)
  )
 
 ;;for score gradients:
-(define *with-score-gradient* #t)
+(define (*with-score-gradient*) #t)
 (define tapify (make-tapifier))
 (define (min a b) (if (< a b) a b)) ;;FIXME: proper dmin?
 (define (continuous? x) (and (real? x) (not (fixnum? x))))

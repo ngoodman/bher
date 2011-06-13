@@ -7,10 +7,11 @@
 ;; write to filename-church.sc
 
 (import (rnrs)
-	(_srfi :1)
+	(scheme-tools srfi-compat :1)
 	(church readable-scheme)
         (church compiler)
-        (only (ikarus) pretty-print))
+        ;(only (vicare) pretty-print)
+        )
 
 (define (read-source pathname)
  (call-with-input-file pathname

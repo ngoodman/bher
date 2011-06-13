@@ -7,13 +7,13 @@
   (make-xrp xrp-name
             (lambda (stats hyperparams args) ;;sample
               (let* ((value (apply sampler args))
-                     (value (if (and *with-score-gradient* (continuous? value)) (tapify (untapify value)) value)))
+                     (value (if (and (*with-score-gradient*) (continuous? value)) (tapify (untapify value)) value)))
                 (list value stats (scorer args value))))
             (lambda (value stats hyperparams args) ;;incr-stats
-              (let ((value (if (and *with-score-gradient* (continuous? value)) (tapify (untapify value)) value)))
+              (let ((value (if (and (*with-score-gradient*) (continuous? value)) (tapify (untapify value)) value)))
                 (list value stats (scorer args value))))
             (lambda (value stats hyperparams args) ;;decr-stats
-              (let ((value (if (and *with-score-gradient* (continuous? value)) (tapify (untapify value)) value)))
+              (let ((value (if (and (*with-score-gradient*) (continuous? value)) (tapify (untapify value)) value)))
                 (list value stats (scorer args value))))
             'scorer;;FIXME
             '() ;;init-stats

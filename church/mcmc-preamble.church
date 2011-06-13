@@ -40,7 +40,7 @@
         (rejection-initializer normal-form-proc)
         proposal-state)))
 
-(define verbose-init #f)
+(define verbose-init #t)
 
 ;; initialize using rejection on highest temp
 ;; then for each temp from high to low:
@@ -341,6 +341,7 @@
                                                                                      nfqp
                                                                                      discrete-xrp-draw?))
                                                   mcmc-state->score)))
+                                  
      num-samples)))
 
 

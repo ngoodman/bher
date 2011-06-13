@@ -7,11 +7,12 @@
                  true false true? false?
                  tagged-list?
                  gensym
+                 pretty-print
                  )
          
-         (import (_srfi :1)
+         (import (scheme-tools srfi-compat :1)
                  (rnrs)
-                 (only (ikarus) gensym)
+                 (only (ikarus) gensym pretty-print)
                  )         
         
          (define rest cdr)
