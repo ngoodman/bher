@@ -21,7 +21,7 @@
          )
 
  (define *storethreading* false)
- (define *lazy* false) ;;at the moment this just turns on forcing, in order to support lazified code. explicitly lazify an expression to make it lazy.
+ (define *lazy* true) ;;at the moment this just turns on forcing, in order to support lazified code. explicitly lazify an expression to make it lazy.
  
  (define (compile top-list external-defs)
    (let* ((church-sexpr  `(begin

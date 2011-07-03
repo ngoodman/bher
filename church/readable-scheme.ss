@@ -8,11 +8,13 @@
                  tagged-list?
                  gensym
                  pretty-print
+                 exact->inexact
+                 inexact->exact
                  )
          
          (import (scheme-tools srfi-compat :1)
                  (rnrs)
-                 (only (ikarus) gensym pretty-print)
+                 (only (ikarus) gensym pretty-print exact->inexact inexact->exact)
                  )         
         
          (define rest cdr)

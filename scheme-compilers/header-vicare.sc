@@ -1,48 +1,24 @@
 (import
- ;; (rnrs)
- ;; ;;for AD fun comment these in and (rnrs) out:
- ;; ;;(except (rnrs) real? negative? positive? zero? >= <= > < = atan cos sin expt log exp sqrt / * - +)
- ;; ;;(church utils AD)
- 
- ;; (rnrs mutable-pairs) ;;because the header uses set-car! when note storethreading.
- ;; (except (srfi :1) remove partition member map for-each fold-right find filter assoc) ;;provides some list functions that are used.
- ;; (srfi :19) ;;date+time for inference timing
- ;; (rename (scheme-tools math) (sample-discrete discrete-sampler)) ;;this provides the gsl sampling/scoring functions.
- ;; (rename (only (ikarus)
- ;;               gensym ;;this is needed.
- ;;               pretty-print
- ;;               exact->inexact) ;;this isn't really needed.
- ;;         (gensym scheme-gensym))
-
- ;; (church trie)
-
- ;; ;(church compiler)
- ;; ;(rnrs eval)
-
- ;; ;(except (srfi :69) string-ci-hash string-hash) ;;used for CGIS, can comment out otherwise...
-
- ;; )
-
-
 
  (except (rnrs) real? negative? positive? zero? >= <= > < = atan cos sin expt log exp sqrt / * - + min)
- (church AD)
+ (church AD) ;;provides overloaded math ops. should only use when we're doing hmc?
  (rename (except (scheme-tools math) lngamma) (sample-discrete discrete-sampler)) ;;this provides the gsl sampling/scoring functions.
  
  (rnrs mutable-pairs) ;;because the header uses set-car!
  (scheme-tools srfi-compat :1) ;;provides some list functions that are used.
  (srfi :19) ;;date+time for inference timing
- (rename (only (ikarus)
+ 
+ (rename (only (church readable-scheme)
                gensym ;;this is needed.
                pretty-print
                exact->inexact
-	       inexact->exact) ;;this isn't really needed.
+               inexact->exact
+               )
          (gensym scheme-gensym))
-
- ;(church readable-scheme)
 
  (church trie)
 
+ ;;to provide eval in church:
  (church compiler)
  (rnrs eval)
 

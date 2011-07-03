@@ -37,7 +37,8 @@ def parse_params(params):
 @optfunc.arghelp('time', 'record the time it takes for the compiled file to run')
 @optfunc.arghelp('set', 'run church file with multiple parameter settings')
 @optfunc.arghelp('keep', 'do not delete compiled file')
-def main(file, verbose=False, debug=False, keep=False, pretty=False, time=False, ext="", set=""):
+@optfunc.arghelp('scheme', 'name of the scheme compiler to use')
+def main(file, verbose=False, debug=False, keep=False, pretty=False, time=False, ext="", set="", scheme="vicare"):
     """Usage: %prog <file> [options]
 
 Examples:
@@ -60,12 +61,14 @@ Examples:
     settings = {
         "bher_path" : bher_path,
         "in_path" : abspath(file),
-        "header_path" : abspath(os.path.join(bher_path, "scheme-compilers/header-vicare.sc")),
-        "trailer_path" : abspath(os.path.join(bher_path, "scheme-compilers/trailer-vicare.sc")) ,
+        "header_path" : abspath(os.path.join(bher_path, "scheme-compilers/header-" + scheme + ".sc")),
+        "trailer_path" : abspath(os.path.join(bher_path, "scheme-compilers/trailer-" + scheme + ".sc")) ,
         "compiler" : abspath(os.path.join(bher_path, "church/church-compiler.ss")),
         "debug" : debug and "--debug" or "",
         "pretty" : pretty and "T" or "F",
-        "ext" : ext and abspath(ext) or ""
+        "ext" : ext and abspath(ext) or "",
+        "scheme" : scheme,
+        "r6rs": "--r6rs-script" #"-r6rs -program" 
     }
 
     for (i, (param_key, param_value)) in enumerate(params):
@@ -91,7 +94,7 @@ Examples:
             call("cp '%(in_path)s' '%(in_path)s.tmp'" % settings, verbose)
 
         vprint("compiling church->scheme", verbose)
-        call(("cd '%(bher_path)s' && vicare %(debug)s --r6rs-script '%(compiler)s' " +
+        call(("cd '%(bher_path)s' && %(scheme)s %(debug)s %(r6rs)s '%(compiler)s' " +
               "'%(in_path)s.tmp' '%(out_path)s.tmp' '%(ext)s' %(pretty)s") % settings, verbose)
         call("rm -f '%(in_path)s.tmp'" % settings, verbose, allow_fail=True)
         
@@ -102,7 +105,7 @@ Examples:
         
         vprint("running generated scheme ", verbose)
         pre = datetime.now()
-        call("vicare %(debug)s --r6rs-script '%(out_path)s'" % settings, verbose)
+        call("%(scheme)s %(debug)s --r6rs-script '%(out_path)s'" % settings, verbose)
         post = datetime.now()
         
         if time:

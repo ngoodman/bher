@@ -296,6 +296,11 @@
  (define (fragment-lambda? expr) (tagged-list? expr 'f-lambda))
  (define (desugar-fragment-lambda sexpr)
    `(DPmem 1.0 (lambda ,(lambda-parameters sexpr) (if (flip) ,(lambda-body sexpr) (list 'delayed (lambda () ,(lambda-body sexpr)))))))
+
+ (define (lazy-lambda? expr) (tagged-list? expr 'l-lambda))
+ (define (desugar-lazy-lambda sexpr)
+   `(lambda ,(lambda-parameters sexpr) (list 'delayed (mem (lambda () ,(lambda-body sexpr))))))
+ 
    
 
                                         ; @form (let ((var val) ...) expr ...)
@@ -339,6 +344,7 @@
 
 
  (register-sugar! fragment-lambda? desugar-fragment-lambda)
+ (register-sugar! lazy-lambda? desugar-lazy-lambda)
  (register-sugar! lazify? desugar-lazify)
  ;(register-sugar! fragmentize? desugar-fragmentize)
 
