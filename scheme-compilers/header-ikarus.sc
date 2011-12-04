@@ -22,7 +22,13 @@
 
  (except (_srfi :69) string-ci-hash string-hash) ;;used for CGIS, can comment out otherwise...
 
- (only (scheme-tools) normalize string-sort bin)
+ (only (scheme-tools)
+       normalize
+       string-sort
+       bin
+       parameterize ;; interventions
+       make-parameter ;; interventions                      
+       )
  )
 
 ;;for score gradients:

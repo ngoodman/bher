@@ -392,7 +392,19 @@
        ;  'foo
        ;  )
          
+
+       ;; --------------------------------------------------------------------
+       ;; MCMC with counterfactuals
+
+       (define *intervention* (make-parameter #f))
+
+       (define (church-*intervention* address store)
+         (*intervention*))
          
+       (define (church-with-interventions address store state proc)
+         (parameterize ([*intervention* #t])
+                       (proc (mcmc-state->address state)
+                             (mcmc-state->store state))))
 
        )
      )
