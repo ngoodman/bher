@@ -230,28 +230,3 @@
  (define (log-normalize log-scores)
    (let* ([score-sum (apply log-sum-exp log-scores)])
      (map (lambda (score) (- score score-sum)) log-scores)))
-
-
-;; MCMC with counterfactuals
-;;
-;; Requires:
-;; - (*intervention*) -- a global parameter
-;; - (with-interventions proc) -- set *intervention* parameter to #t during application of proc
-
-(define (mcmc-state->counterfactual-value state normal-form-proc)
-  (let* ([counterfactual-state (update->state (with-interventions state (lambda () (counterfactual-update state normal-form-proc))))])
-    (mcmc-state->query-value counterfactual-state)))
-
-(define (counterfactual-query num-samples lag normal-form-proc)
-  (repeated-mcmc-query-core (lambda () (rejection-initializer normal-form-proc))
-                                           (basic-repeat-kernel lag normal-form-proc)
-                                           (lambda (state)
-                                             (let* ([actual-value (force-deep (mcmc-state->query-value state))]
-                                                    [counterfactual-value (mcmc-state->counterfactual-value state normal-form-proc)])
-                                               (list actual-value counterfactual-value)))
-                                           num-samples))
-
-(define (intervene value intervention-value)
-  (if (*intervention*)
-      intervention-value
-      value))
