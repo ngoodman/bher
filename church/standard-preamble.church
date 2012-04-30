@@ -260,7 +260,7 @@
 ;;Pitman-Yor Process generalization of CRP
 ;; Note when a=0 and b>0 then this is the same as the CRP
 (define (make-PYP a b)
-  (let ((sticks (mem (lambda (x) (beta (- 1.0 a) (+ b (* a x)))))))
+  (let ((sticks (mem (lambda (x) (first (beta (- 1.0 a) (+ b (* a x))))))))
     (lambda () (pick-a-stick sticks 1))))
 
 (define (PYmem a b proc)
