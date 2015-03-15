@@ -1,0 +1,1 @@
+This is the Bher compiler for the Church probabilistic programming language.
